@@ -149,7 +149,7 @@ fun DealsScreen(c: DealsController, onOpen: (Ad) -> Unit) {
             ) {
                 s.error?.let { item { CenterNote("Chyba: $it", action = "Zkusit znovu" to c::refresh) } }
                 if (s.loading && s.ads.isEmpty()) item { CenterNote("Načítám iPhony a výkupní ceny…", progress = true) }
-                items(visible, key = { it.id }) { ad -> DealCard(ad) { onOpen(ad) } }
+                items(visible, key = { it.id }) { ad -> DealCard(ad, s.marketFor(ad)) { onOpen(ad) } }
                 if (!s.loading && s.ads.isNotEmpty() && visible.isEmpty()) item { CenterNote("V načtených nic neodpovídá filtru — sjeď níž pro další.") }
                 if (s.loadingMore) item { CenterNote("Načítám další…", progress = true) }
             }

@@ -116,7 +116,7 @@ fun ListingCard(l: Listing, plus: Ad?, favorite: Boolean, onFavorite: () -> Unit
 /** Karta v záložce Výkup: iPhone s modelem, stavem, výkupem a ziskem. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DealCard(ad: Ad, onClick: () -> Unit) {
+fun DealCard(ad: Ad, market: cz.petrkyncl.bazosiphony.domain.MarketStats?, onClick: () -> Unit) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val p = ad.plus
     Card(
@@ -137,7 +137,13 @@ fun DealCard(ad: Ad, onClick: () -> Unit) {
                     Text(ad.price?.let(::czk) ?: ad.priceText ?: "—", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     if (ad.deal != Deal.EXCLUDED) ad.profit?.let { ProfitPill(it) }
                 }
-                p?.buyoutFor(p.condition.grade)?.let { Text("výkup ${czk(it)}", style = MaterialTheme.typography.bodySmall, color = muted) }
+                Text(
+                    listOfNotNull(
+                        p?.buyoutFor(p.condition.grade)?.let { "výkup ${czk(it)}" },
+                        market?.let { "medián Bazoš ${czk(it.median)}" },
+                    ).joinToString("  ·  "),
+                    style = MaterialTheme.typography.bodySmall, color = muted,
+                )
                 if (p != null) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         p.model?.let { Tag(it + (p.storageGb?.let { gb -> " · " + storageText(gb) } ?: "")) }

@@ -10,6 +10,8 @@ import cz.petrkyncl.bazosiphony.data.Listing
 import cz.petrkyncl.bazosiphony.data.Repository
 import cz.petrkyncl.bazosiphony.data.SellerProfile
 import cz.petrkyncl.bazosiphony.domain.Grade
+import cz.petrkyncl.bazosiphony.domain.MarketStats
+import cz.petrkyncl.bazosiphony.domain.marketQuery
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -132,7 +134,10 @@ class DealsController(private val scope: CoroutineScope, private val repo: Repos
         val loadingMore: Boolean = false,
         val error: String? = null,
         val pricelistUpdatedAt: Long? = null,
+        val markets: Map<String, MarketStats?> = emptyMap(), // podle marketQuery(model)
     ) {
+        fun marketFor(ad: Ad): MarketStats? = ad.plus?.key?.let { markets[marketQuery(it)] }
+
         val visible: List<Ad>
             get() {
                 var list = ads
@@ -170,6 +175,15 @@ class DealsController(private val scope: CoroutineScope, private val repo: Repos
                         loading = false, loadingMore = false, pricelistUpdatedAt = pricelistAt,
                     )
                 }
+                // tržní hodnota pro modely v nové stránce (každý model jen jednou, pak z cache)
+                ads.mapNotNull { it.plus?.key }.distinctBy { marketQuery(it) }
+                    .filter { marketQuery(it) !in _state.value.markets }
+                    .forEach { key ->
+                        scope.launch {
+                            val m = runCatching { repo.market(key) }.getOrNull()
+                            _state.update { it.copy(markets = it.markets + (marketQuery(key) to m)) }
+                        }
+                    }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -211,6 +225,8 @@ class DetailController(
         val phone: String? = null,
         val phoneLoading: Boolean = false,
         val phoneError: String? = null,
+        val market: MarketStats? = null,
+        val marketLoading: Boolean = false,
     )
 
     private val _state = MutableStateFlow(State())
@@ -227,6 +243,13 @@ class DetailController(
                 val known = account.cachedPhone(ad.seller.id, adId)
                 _state.update { it.copy(ad = ad, phone = known) }
                 if (known == null && account.canAutoReveal()) revealPhone()
+                ad.plus?.key?.let { key ->
+                    _state.update { it.copy(marketLoading = true) }
+                    scope.launch {
+                        val m = runCatching { repo.market(key, excludeId = adId) }.getOrNull()
+                        _state.update { it.copy(market = m, marketLoading = false) }
+                    }
+                }
                 val seller = runCatching { repo.seller(ad) }.getOrNull()
                 _state.update { it.copy(seller = seller, sellerLoading = false) }
             } catch (e: CancellationException) {

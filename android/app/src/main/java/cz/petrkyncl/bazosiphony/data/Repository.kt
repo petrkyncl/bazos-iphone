@@ -2,6 +2,11 @@ package cz.petrkyncl.bazosiphony.data
 
 import android.content.Context
 import cz.petrkyncl.bazosiphony.domain.Grade
+import cz.petrkyncl.bazosiphony.domain.IphoneKey
+import cz.petrkyncl.bazosiphony.domain.MarketItem
+import cz.petrkyncl.bazosiphony.domain.MarketStats
+import cz.petrkyncl.bazosiphony.domain.marketQuery
+import cz.petrkyncl.bazosiphony.domain.marketStats
 import cz.petrkyncl.bazosiphony.domain.estimateCondition
 import cz.petrkyncl.bazosiphony.domain.listingIssue
 import cz.petrkyncl.bazosiphony.domain.modelLabel
@@ -222,6 +227,27 @@ class Repository private constructor(context: Context) {
         Triple(ads, page, prices?.updatedAtMillis)
     }
 
+    // --- Tržní hodnota (ceny stejného modelu na Bazoši), cache 1 h na model ---------------
+    private val marketCache = ConcurrentHashMap<String, Pair<Long, List<MarketItem>>>()
+    private val marketLimit = Semaphore(3)
+
+    /** Tržní hodnota modelu z aktuálních inzerátů (1–2 dotazy na model, pak z cache). */
+    suspend fun market(key: IphoneKey, excludeId: String? = null): MarketStats? {
+        val query = marketQuery(key)
+        val items = marketCache[query]?.takeIf { System.currentTimeMillis() - it.first < MARKET_CACHE_MS }?.second
+            ?: marketLimit.withPermit {
+                val f = Filters(
+                    query = query, sort = "date",
+                    section = Section(BazosApi.SECTION_MOBILES, "Mobily"),
+                    categories = listOf(Category(BazosApi.CATEGORY_APPLE, "Apple")),
+                )
+                val first = BazosApi.search(f, 0, 200)
+                val rest = if (first.total > 200) BazosApi.search(f, 200, 200).items else emptyList()
+                (first.items + rest).map { MarketItem(it.id, it.title, it.price) }
+            }.also { marketCache[query] = System.currentTimeMillis() to it }
+        return marketStats(key, items, excludeId)
+    }
+
     suspend fun refreshPricelist(): Long = pricelist.get(forceRefresh = true).updatedAtMillis
 
     suspend fun seller(ad: Ad): SellerProfile {
@@ -251,6 +277,7 @@ class Repository private constructor(context: Context) {
         private const val CACHE_MS = 10 * 60_000L
         private const val CATALOG_MAX_AGE_MS = 7 * 24 * 3600_000L
         private const val POPULARITY_MAX_AGE_MS = 30 * 24 * 3600_000L
+        private const val MARKET_CACHE_MS = 3600_000L
         private const val OTHER_BRANDS = "349" // Mobily → „Ostatní značky"
         private const val MAX_TOP_SKIP_ROUNDS = 5 // kolik stránek topovaných max. přeskočit (5 × 200)
 
@@ -303,6 +330,7 @@ class Repository private constructor(context: Context) {
             // podezřelá cena = hluboko pod nejnižším výkupem funkčního kusu (A+–C)
             val working = match?.first?.buy?.filterKeys { it != Grade.D.code }?.values?.minOrNull()
             return PhonePlus(
+                key = key?.takeIf { it.number != null },
                 model = key?.takeIf { it.number != null }?.let(::modelLabel),
                 storageGb = key?.storageGb,
                 condition = estimateCondition(title, description),

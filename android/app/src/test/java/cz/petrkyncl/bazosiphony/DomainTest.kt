@@ -59,3 +59,29 @@ class DomainTest {
         assertEquals(Issue.RESERVATION_SALE, listingIssue("Rezervace iPhone 18 Pro", ""))
     }
 }
+
+class MarketTest {
+    private fun item(id: Int, title: String, price: Int?) = cz.petrkyncl.bazosiphony.domain.MarketItem(id.toString(), title, price)
+
+    @Test
+    fun ignoresNoiseAndOutliers() {
+        val key = parseIphone("iPhone 15 Pro 128GB")!!
+        val items = listOf(
+            item(1, "iPhone 15 Pro 128GB černý", 12000),
+            item(2, "Apple iPhone 15 Pro 128 GB", 13000),
+            item(3, "iPhone 15 Pro 128GB jako nový", 14000),
+            item(4, "Kryt na iPhone 15 Pro", 500),            // příslušenství
+            item(5, "iPhone 15 Pro Max 128GB", 18000),        // jiný model
+            item(6, "iPhone 15 Pro 256GB", 15000),            // jiná kapacita
+            item(7, "iPhone 15 Pro 128GB prasklý displej", 6000), // rozbitý
+            item(8, "Koupím iPhone 15 Pro 128GB", 11000),     // poptávka
+            item(9, "iPhone 15 Pro 128GB", 1000),             // extrém: pod 40 % mediánu
+            item(10, "iPhone 15 Pro 128GB", null),            // dohodou
+        )
+        val m = cz.petrkyncl.bazosiphony.domain.marketStats(key, items)!!
+        assertEquals(3, m.count)
+        assertEquals(12000, m.min)
+        assertEquals(13000, m.median)
+        assertEquals("1", m.cheapestId)
+    }
+}

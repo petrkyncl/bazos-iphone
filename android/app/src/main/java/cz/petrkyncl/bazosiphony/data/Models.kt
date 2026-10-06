@@ -80,6 +80,7 @@ data class Seller(val id: String?, val name: String?, val totalAds: Int, val rev
 
 /** „Plus" vrstva pro iPhony: model, odhad stavu, výkup mp.cz. */
 data class PhonePlus(
+    val key: cz.petrkyncl.bazosiphony.domain.IphoneKey?, // strukturní klíč modelu (pro tržní hodnotu)
     val model: String?, // rozpoznaný model, např. „iPhone 15 Pro"
     val storageGb: Int?,
     val condition: ConditionEstimate,

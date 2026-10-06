@@ -134,6 +134,7 @@ fun DetailScreen(
                 if (p.issue != null || p.condition.warnings.isNotEmpty()) item { Warnings(ad) }
                 item { ConditionCard(ad) }
                 item { BuyoutCard(ad, s.grade ?: p.condition.grade, c::setGrade, ::open) }
+                if (p.key != null) item { MarketCard(ad, s.market, s.marketLoading, onOpenAd) }
             }
             item {
                 Section("Popis") {
@@ -406,6 +407,53 @@ private fun ImageViewer(images: List<String>, start: Int, onDismiss: () -> Unit)
                 AsyncImage(images[page], null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
             }
             Text("${pager.currentPage + 1} / ${images.size}", Modifier.align(Alignment.BottomCenter).padding(24.dp), color = Color.White)
+        }
+    }
+}
+
+/** Tržní hodnota: za kolik se stejný model a kapacita prodávají na Bazoši. */
+@Composable
+private fun MarketCard(ad: Ad, m: cz.petrkyncl.bazosiphony.domain.MarketStats?, loading: Boolean, onOpenAd: (String) -> Unit) {
+    val p = ad.plus ?: return
+    val name = listOfNotNull(p.model, p.storageGb?.let(::storageText)).joinToString(" ")
+    Section("Plus · tržní hodnota na Bazoši") {
+        when {
+            loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Hledám ceny $name…", style = MaterialTheme.typography.bodySmall)
+            }
+            m == null -> Text(
+                "Na Bazoši je teď málo srovnatelných inzerátů ($name)" + if (p.storageGb == null) " — v inzerátu chybí kapacita." else ".",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> {
+                Text("$name · z ${m.count} aktuálních inzerátů (bez krytů, poptávek a rozbitých kusů)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Stat("nejlevněji", czk(m.min), null, Modifier.weight(1f))
+                    Stat("medián", czk(m.median), MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+                }
+                Text("Běžně ${czk(m.p25)} – ${czk(m.p75)}", style = MaterialTheme.typography.bodyMedium)
+                ad.price?.let { price ->
+                    val diff = price - m.median
+                    val st = LocalStatus.current
+                    Text(
+                        when {
+                            diff < 0 -> "Tento inzerát je o ${czk(-diff)} pod mediánem."
+                            diff > 0 -> "Tento inzerát je o ${czk(diff)} nad mediánem."
+                            else -> "Tento inzerát je přesně na mediánu."
+                        },
+                        color = if (diff < 0) st.good else if (diff > 0) st.bad else MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Text(
+                    "Nejlevnější: ${m.cheapestTitle} ›",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable { onOpenAd(m.cheapestId) },
+                )
+            }
         }
     }
 }
