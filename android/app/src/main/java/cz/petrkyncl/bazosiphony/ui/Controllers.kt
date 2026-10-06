@@ -164,7 +164,7 @@ class DealsController(private val scope: CoroutineScope, private val repo: Repos
     private fun load(reset: Boolean) {
         if (reset) job?.cancel() else if (job?.isActive == true) return
         val s = _state.value
-        _state.update { it.copy(loading = reset, loadingMore = !reset, error = null) }
+        _state.update { it.copy(loading = reset, loadingMore = !reset, error = null, ads = if (reset) emptyList() else it.ads, page = if (reset) null else it.page) }
         job = scope.launch {
             try {
                 val (ads, page, pricelistAt) = repo.phoneDeals(s.filters.copy(sort = s.sort.api), if (reset) null else s.page)

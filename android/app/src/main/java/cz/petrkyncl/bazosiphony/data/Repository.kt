@@ -141,7 +141,13 @@ class Repository private constructor(context: Context) {
     private fun streams(f: Filters): List<Pair<String, Filters>> {
         val withModels = f.models.isNotEmpty()
         val cats: List<Category?> = if (withModels) listOf(Category(BazosApi.CATEGORY_APPLE, "Apple")) else f.categories.ifEmpty { listOf(null) }
-        val queries: List<String> = if (withModels) f.models.map { (it.lowercase().replace("(", "").replace(")", "") + " " + f.query).trim() } else listOf(f.query)
+        // 1–2 modely: hledání pro každý zvlášť (přesné i u vzácných modelů); víc modelů: jedno hledání
+        // „iphone" a modely odfiltruje appka — jinak by to byly desítky dotazů a Bazoš vrací HTTP 429
+        val queries: List<String> = when {
+            !withModels -> listOf(f.query)
+            f.models.size <= 2 -> f.models.map { (it.lowercase().replace("(", "").replace(")", "") + " " + f.query).trim() }
+            else -> listOf(("iphone " + f.query).trim())
+        }
         return cats.flatMap { c ->
             queries.map { q ->
                 "${c?.id.orEmpty()}|$q" to f.copy(
