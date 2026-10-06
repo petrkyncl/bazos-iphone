@@ -8,7 +8,22 @@ Web, který ukazuje iPhony z Bazoše a ke každému inzerátu přidá:
 - **info o prodejci**: počet inzerátů, kladné/záporné recenze, jeho další inzeráty, příznak překupníka,
 - šum: prodáno / rezervováno / poptávka / příslušenství / podezřele nízká cena, repliky, iCloud, vyměněné díly.
 
-## Spuštění
+## Android aplikace (`android/`)
+
+Nativní appka (Kotlin + Jetpack Compose, Material You) — samostatná, volá API Bazoše i mp.cz přímo
+z telefonu, žádný server. Ceník mp.cz si drží v telefonu a obnovuje 1× denně.
+
+```bash
+cd android
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+./gradlew :app:installDebug      # build + instalace do připojeného telefonu
+./gradlew :app:testDebugUnitTest # testy parseru a pravidel stavu
+```
+
+Logika je port webové verze: `domain/Matching.kt`, `domain/Condition.kt` (pravidla stavu),
+`data/BazosApi.kt`, `data/MpPricelist.kt`, `data/AdRepository.kt`; UI v `ui/`.
+
+## Web — spuštění
 
 ```bash
 npm install

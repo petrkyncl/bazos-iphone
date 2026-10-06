@@ -41,7 +41,8 @@ export function evaluateAd(d: BazosDetail, pricelist: Pricelist | null): Evaluat
     description,
     price,
     priceText: d.price_formatted ?? null,
-    date: toIsoDate(d.from),
+    // u topovaných inzerátů je „from" čas posledního topování, ne vložení → nezobrazovat
+    date: d.topped === true || d.topped === "true" ? null : toIsoDate(d.from),
     isTop: d.topped === true || d.topped === "true",
     views: Number(d.views) || 0,
     images: d.images ?? [],
