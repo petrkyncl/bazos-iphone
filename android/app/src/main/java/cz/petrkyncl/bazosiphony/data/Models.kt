@@ -87,6 +87,8 @@ data class PhonePlus(
     val buyout: PriceVariant?, // spárovaná varianta ceníku mp.cz
     val storageGuessed: Boolean, // kapacita v inzerátu chybí/nesedí → nejbližší/nejlevnější varianta
     val issue: Issue?,
+    val color: String? = null,
+    val warranty: String? = null, // „záruka do 01/2028" / „záruka"
 ) {
     val isReplica get() = condition.warnings.any { it.startsWith("Replika") }
     fun buyoutFor(grade: Grade): Int? = buyout?.buy?.get(grade.code)

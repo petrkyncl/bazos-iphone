@@ -6,6 +6,8 @@ import cz.petrkyncl.bazosiphony.domain.estimateCondition
 import cz.petrkyncl.bazosiphony.domain.listingIssue
 import cz.petrkyncl.bazosiphony.domain.modelLabel
 import cz.petrkyncl.bazosiphony.domain.parseIphone
+import cz.petrkyncl.bazosiphony.domain.extractColor
+import cz.petrkyncl.bazosiphony.domain.extractWarranty
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -83,5 +85,22 @@ class MarketTest {
         assertEquals(12000, m.min)
         assertEquals(13000, m.median)
         assertEquals("1", m.cheapestId)
+    }
+}
+
+class AttributesTest {
+    @Test
+    fun colorAndWarranty() {
+        val c = ::extractColor
+        val w = ::extractWarranty
+        assertEquals("oranžová", c("iPhone 17 Pro Max - 256 Gb, oranžová, 99%", ""))
+        assertEquals("přírodní titan", c("iPhone 15 Pro Natural Titanium 128GB", ""))
+        assertEquals("černá", c("Apple iPhone 15 Pro 256GB černý", ""))
+        assertEquals("modrá", c("iPhone 16 256 GB Ultramarine", ""))
+        assertEquals("bílá", c("iPhone 14", "Barva: bílá. Prodávám i s modrým krytem."))
+        assertNull(c("iPhone 14 128GB", "K telefonu dám modrý kryt."))
+        assertEquals("záruka do 01/2028", w("iPhone 17 Pro Max", "v záruce je tedy do 01/2028."))
+        assertEquals("záruka", w("iPhone 15 záruka", ""))
+        assertNull(w("iPhone 12", "Telefon je bez záruky."))
     }
 }

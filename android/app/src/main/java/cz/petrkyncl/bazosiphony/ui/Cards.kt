@@ -41,6 +41,11 @@ import cz.petrkyncl.bazosiphony.data.Ad
 import cz.petrkyncl.bazosiphony.data.Deal
 import cz.petrkyncl.bazosiphony.data.Listing
 import cz.petrkyncl.bazosiphony.domain.Confidence
+import cz.petrkyncl.bazosiphony.domain.IphoneKey
+import cz.petrkyncl.bazosiphony.domain.MarketStats
+import cz.petrkyncl.bazosiphony.domain.listingIssue
+import cz.petrkyncl.bazosiphony.domain.parseIphone
+import cz.petrkyncl.bazosiphony.domain.phoneHeadline
 
 @Composable
 private fun Thumb(url: String?, isTop: Boolean, size: Int = 104) {
@@ -71,6 +76,12 @@ private fun Thumb(url: String?, isTop: Boolean, size: Int = 104) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ListingCard(l: Listing, plus: Ad?, favorite: Boolean, onFavorite: () -> Unit, onClick: () -> Unit) {
+    // telefon → jednotná strukturovaná karta (model, kapacita, stav, baterie… vždy stejně)
+    val key = plus?.plus?.key ?: parseIphone(l.title)?.takeIf { it.number != null }
+    if (key != null && plus?.plus?.issue?.excludes != true && listingIssue(l.title, "") == null) {
+        PhoneCard(l, key, plus, market = null, favorite = favorite, onFavorite = onFavorite, onClick = onClick)
+        return
+    }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     Card(
         onClick = onClick,
@@ -113,54 +124,75 @@ fun ListingCard(l: Listing, plus: Ad?, favorite: Boolean, onFavorite: () -> Unit
     }
 }
 
-/** Karta v záložce Výkup: iPhone s modelem, stavem, výkupem a ziskem. */
+/** Karta v záložce Výkup: stejná jednotná karta telefonu (i u vyřazených, ztlumeně). */
+@Composable
+fun DealCard(ad: Ad, market: MarketStats?, onClick: () -> Unit) {
+    val key = ad.plus?.key
+    if (key == null) {
+        ListingCard(ad.toListing(), ad, favorite = false, onFavorite = {}, onClick = onClick)
+        return
+    }
+    Box(Modifier.alpha(if (ad.deal == Deal.EXCLUDED) 0.55f else 1f)) {
+        PhoneCard(ad.toListing(), key, ad, market, favorite = null, onFavorite = {}, onClick = onClick)
+    }
+}
+
+/**
+ * Jednotná karta telefonu — první řádek je vždy „iPhone 15 Pro Max · 256 GB", pak vždy ve stejném
+ * pořadí stav, baterie, barva, záruka; cena se ziskem a mediánem; původní nadpis až drobně dole.
+ * Údaje z popisu (stav, baterie…) se doplní, jakmile dorazí detail.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DealCard(ad: Ad, market: cz.petrkyncl.bazosiphony.domain.MarketStats?, onClick: () -> Unit) {
+fun PhoneCard(l: Listing, key: IphoneKey, ad: Ad?, market: MarketStats?, favorite: Boolean?, onFavorite: () -> Unit, onClick: () -> Unit) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    val p = ad.plus
+    val p = ad?.plus
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().alpha(if (ad.deal == Deal.EXCLUDED) 0.55f else 1f),
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(Modifier.padding(10.dp)) {
-            Thumb(ad.thumb, ad.isTop)
+            Thumb(l.thumb, l.isTop)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row(verticalAlignment = Alignment.Top) {
-                    DealDot(ad.deal, Modifier.padding(top = 6.dp, end = 6.dp))
-                    Text(ad.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (ad != null) DealDot(ad.deal, Modifier.padding(end = 6.dp))
+                    Text(phoneHeadline(key), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
-                    Text(ad.price?.let(::czk) ?: ad.priceText ?: "—", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    if (ad.deal != Deal.EXCLUDED) ad.profit?.let { ProfitPill(it) }
+                // vlastnosti vždy ve stejném pořadí; dokud se nenačte detail, jen to, co je v nadpisu
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (p != null) GradeChip(p.condition.grade, faded = p.condition.confidence == Confidence.LOW)
+                    p?.condition?.batteryPct?.let { Tag("🔋 $it %") }
+                    p?.color?.let { Tag(it) }
+                    p?.warranty?.let { Tag(it) }
+                    p?.issue?.let { Tag(it.label, if (ad.deal == Deal.EXCLUDED) Tone.BAD else Tone.WARN) }
+                    p?.condition?.warnings?.firstOrNull()?.let { Tag("⚠ " + it.substringBefore(" (").substringBefore(" — "), Tone.WARN) }
                 }
-                Text(
-                    listOfNotNull(
-                        p?.buyoutFor(p.condition.grade)?.let { "výkup ${czk(it)}" },
-                        market?.let { "medián Bazoš ${czk(it.median)}" },
-                    ).joinToString("  ·  "),
-                    style = MaterialTheme.typography.bodySmall, color = muted,
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp), itemVerticalAlignment = Alignment.CenterVertically) {
+                    Text(l.price?.let(::czk) ?: l.priceText ?: "—", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    if (ad != null && ad.deal != Deal.EXCLUDED) ad.profit?.let { ProfitPill(it) }
+                }
+                val refs = listOfNotNull(
+                    p?.buyoutFor(p.condition.grade)?.let { "výkup ${czk(it)}" },
+                    market?.let { "medián Bazoš ${czk(it.median)}" },
                 )
-                if (p != null) {
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        p.model?.let { Tag(it + (p.storageGb?.let { gb -> " · " + storageText(gb) } ?: "")) }
-                        GradeChip(p.condition.grade, faded = p.condition.confidence == Confidence.LOW)
-                        p.condition.batteryPct?.let { Tag("🔋 $it %") }
-                        p.issue?.let { Tag(it.label, if (ad.deal == Deal.EXCLUDED) Tone.BAD else Tone.WARN) }
-                        p.condition.warnings.firstOrNull()?.let { Tag("⚠ " + it.substringBefore(" (").substringBefore(" — "), Tone.WARN) }
-                    }
-                }
+                if (refs.isNotEmpty()) Text(refs.joinToString("  ·  "), style = MaterialTheme.typography.bodySmall, color = muted)
+                Text("„${l.title}“", style = MaterialTheme.typography.bodySmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
-                    listOfNotNull(
-                        ad.locality,
-                        ago(ad.dateMillis).ifEmpty { null },
-                        "👤 ${ad.seller.name ?: "?"} · ${ad.seller.totalAds} inz." + if (ad.seller.reviewsCount > 0) " · ★ ${ad.seller.reviewsCount}" else "",
-                    ).joinToString("  ·  "),
-                    style = MaterialTheme.typography.bodySmall, color = muted, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    listOfNotNull(l.locality, ago(l.dateMillis).ifEmpty { null }, "${number(l.views)}×").joinToString("  ·  "),
+                    style = MaterialTheme.typography.labelSmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
+            }
+            if (favorite != null) {
+                IconButton(onClick = onFavorite, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (favorite) "Odebrat z oblíbených" else "Přidat do oblíbených",
+                        tint = if (favorite) MaterialTheme.colorScheme.primary else muted,
+                    )
+                }
             }
         }
     }

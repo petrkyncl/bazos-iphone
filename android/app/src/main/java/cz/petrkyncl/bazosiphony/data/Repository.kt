@@ -8,6 +8,8 @@ import cz.petrkyncl.bazosiphony.domain.MarketStats
 import cz.petrkyncl.bazosiphony.domain.marketQuery
 import cz.petrkyncl.bazosiphony.domain.marketStats
 import cz.petrkyncl.bazosiphony.domain.estimateCondition
+import cz.petrkyncl.bazosiphony.domain.extractColor
+import cz.petrkyncl.bazosiphony.domain.extractWarranty
 import cz.petrkyncl.bazosiphony.domain.listingIssue
 import cz.petrkyncl.bazosiphony.domain.modelLabel
 import cz.petrkyncl.bazosiphony.domain.parseIphone
@@ -210,7 +212,7 @@ class Repository private constructor(context: Context) {
         if (phones.isEmpty()) return@coroutineScope emptyMap()
         val prices = runCatching { pricelist.get() }.getOrNull() ?: return@coroutineScope emptyMap()
         phones.map { l -> async { runCatching { evaluate(rawDetail(l.id), prices) }.getOrNull() } }
-            .awaitAll().filterNotNull().filter { it.plus?.buyout != null }.associateBy { it.id }
+            .awaitAll().filterNotNull().filter { it.plus != null }.associateBy { it.id }
     }
 
     /** Stránka „Výkup": iPhony z Bazoše vyhodnocené proti výkupu mp.cz. */
@@ -337,6 +339,8 @@ class Repository private constructor(context: Context) {
                 buyout = match?.first,
                 storageGuessed = match?.second ?: false,
                 issue = listingIssue(title, description) ?: priceIssue(title, price, working),
+                color = extractColor(title, description),
+                warranty = extractWarranty(title, description),
             )
         }
     }
