@@ -32,6 +32,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val sections = _sections.asStateFlow()
     private val _sectionsError = MutableStateFlow<String?>(null)
     val sectionsError = _sectionsError.asStateFlow()
+    // musí být deklarované před init: loadSections() z cache na disku doběhne synchronně
+    private val _categories = MutableStateFlow<Map<String, List<Category>>>(emptyMap())
+    val categories = _categories.asStateFlow()
 
     var tab by mutableStateOf(Tab.BROWSE)
         private set
@@ -54,9 +57,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { Money.init(app) }
         WatchWorker.schedule(app)
     }
-
-    private val _categories = MutableStateFlow<Map<String, List<Category>>>(emptyMap())
-    val categories = _categories.asStateFlow()
 
     fun loadSections() = viewModelScope.launch {
         _sectionsError.value = null
