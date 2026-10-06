@@ -55,6 +55,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     init {
         loadSections()
         viewModelScope.launch { Money.init(app) }
+        ViewMode.init(app)
         WatchWorker.schedule(app)
     }
 

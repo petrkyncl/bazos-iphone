@@ -28,13 +28,14 @@ data class Filters(
     val priceTo: String = "",
     val zip: String = "",
     val distanceKm: Int = 25,
+    val city: String? = null, // jen dané město (CITIES); přebíjí zip + okruh
     val sort: String = SORT_NEWEST, // newest (podle vložení, bez TOPu) | date (jako Bazoš, TOP první) | price_asc | price_desc
 ) {
     companion object {
         const val SORT_NEWEST = "newest"
     }
 
-    val activeCount get() = listOf(priceFrom, priceTo, zip).count { it.isNotBlank() }
+    val activeCount get() = listOf(priceFrom, priceTo, zip).count { it.isNotBlank() } + (if (city != null) 1 else 0)
 
     /** Klíč pro porovnání uložených hledání (pořadí kategorií ani řazení nehraje roli). */
     fun watchKey(): Filters = copy(sort = SORT_NEWEST, categories = categories.sortedBy { it.id })
@@ -55,7 +56,7 @@ data class Filters(
         query.trim().takeIf { it.isNotEmpty() }?.let { "„$it“" },
         categoriesLabel ?: section?.title,
         if (priceFrom.isNotBlank() || priceTo.isNotBlank()) "${priceFrom.ifBlank { "0" }}–${priceTo.ifBlank { "∞" }} Kč" else null,
-        zip.takeIf { it.isNotBlank() }?.let { "$it +$distanceKm km" },
+        cz.petrkyncl.bazosiphony.domain.cityById(city)?.name ?: zip.takeIf { it.isNotBlank() }?.let { "$it +$distanceKm km" },
     ).joinToString(" · ").ifEmpty { "Všechny inzeráty" }
 }
 

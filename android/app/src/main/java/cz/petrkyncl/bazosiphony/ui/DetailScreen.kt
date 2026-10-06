@@ -114,7 +114,7 @@ fun DetailScreen(
         if (ad == null) {
             Column(Modifier.padding(padding)) {
                 c.preview?.let { p ->
-                    AsyncImage(p.thumb, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).background(MaterialTheme.colorScheme.surfaceContainerHighest))
+                    AsyncImage(p.thumb, null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).background(Color(0xFF0B0B0C)))
                     Text(p.title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
                 }
                 if (s.error != null) CenterNote("Inzerát se nenačetl: ${s.error}", action = "Zkusit znovu" to c::load)
@@ -127,7 +127,12 @@ fun DetailScreen(
             contentPadding = PaddingValues(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (ad.images.isNotEmpty()) item { Gallery(ad.images) { viewer = it } }
+            if (ad.images.isNotEmpty()) item {
+                // celé fotky (na výšku i na šířku) bez ořezu; výška podle šířky displeje
+                androidx.compose.foundation.layout.BoxWithConstraints {
+                    PhotoPager(ad.images, height = (maxWidth * 1.15f).coerceAtMost(560.dp)) { viewer = it }
+                }
+            }
             item { Header(ad, ::open) }
             item { ContactCard(s, verified, autoLimitReached, onReveal = c::revealPhone, onAccount = onAccount, open = ::open) }
             ad.plus?.let { p ->
@@ -145,27 +150,7 @@ fun DetailScreen(
         }
     }
 
-    viewer?.let { start -> ad?.let { ImageViewer(it.images, start) { viewer = null } } }
-}
-
-@Composable
-private fun Gallery(images: List<String>, onClick: (Int) -> Unit) {
-    val pager = rememberPagerState { images.size }
-    Box {
-        HorizontalPager(pager, Modifier.fillMaxWidth().aspectRatio(4f / 3f)) { page ->
-            AsyncImage(
-                images[page], null, contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceContainerHighest).clickable { onClick(page) },
-            )
-        }
-        if (images.size > 1) {
-            Text(
-                "${pager.currentPage + 1} / ${images.size}",
-                Modifier.align(Alignment.BottomEnd).padding(10.dp).background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(50)).padding(horizontal = 10.dp, vertical = 3.dp),
-                color = Color.White, style = MaterialTheme.typography.labelMedium,
-            )
-        }
-    }
+    viewer?.let { start -> ad?.let { PhotoViewer(it.images, start) { viewer = null } } }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -398,18 +383,6 @@ private fun Stat(label: String, value: String, color: Color?, modifier: Modifier
     }
 }
 
-@Composable
-private fun ImageViewer(images: List<String>, start: Int, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        val pager = rememberPagerState(initialPage = start) { images.size }
-        Box(Modifier.fillMaxSize().background(Color.Black).clickable(onClick = onDismiss)) {
-            HorizontalPager(pager, Modifier.fillMaxSize()) { page ->
-                AsyncImage(images[page], null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-            }
-            Text("${pager.currentPage + 1} / ${images.size}", Modifier.align(Alignment.BottomCenter).padding(24.dp), color = Color.White)
-        }
-    }
-}
 
 /** Tržní hodnota: za kolik se stejný model a kapacita prodávají na Bazoši. */
 @Composable

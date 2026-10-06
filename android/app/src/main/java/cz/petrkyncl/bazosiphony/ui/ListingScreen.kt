@@ -66,6 +66,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import cz.petrkyncl.bazosiphony.data.Filters
+import cz.petrkyncl.bazosiphony.domain.CITIES
+import cz.petrkyncl.bazosiphony.domain.cityById
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import cz.petrkyncl.bazosiphony.data.Listing
 import cz.petrkyncl.bazosiphony.data.Repository
 import cz.petrkyncl.bazosiphony.data.Section
@@ -134,7 +138,8 @@ fun ListingScreen(
                             Text(title, maxLines = 1)
                             if (state.total > 0) {
                                 Text(
-                                    "${number(state.total)} inzerátů" + if (f.categories.isNotEmpty() && f.section != null) " · ${f.section.title}" else "",
+                                    (cityById(f.city)?.let { "jen ${it.name}" } ?: "${number(state.total)} inzerátů") +
+                                        if (f.categories.isNotEmpty() && f.section != null) " · ${f.section.title}" else "",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -142,6 +147,7 @@ fun ListingScreen(
                     },
                     navigationIcon = { if (canGoBack) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zpět") } },
                     actions = {
+                        ViewModeButton()
                         IconButton(onClick = { onWatch(f, state.maxId) }, enabled = !watched) {
                             Icon(
                                 if (watched) Icons.Default.NotificationsActive else Icons.Default.NotificationAdd,
@@ -310,7 +316,7 @@ private fun SuggestionRow(icon: androidx.compose.ui.graphics.vector.ImageVector,
     HorizontalDivider()
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FilterSheet(initial: Filters, onDismiss: () -> Unit, onApply: (Filters) -> Unit) {
     var f by remember { mutableStateOf(initial) }
@@ -333,12 +339,34 @@ fun FilterSheet(initial: Filters, onDismiss: () -> Unit, onApply: (Filters) -> U
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 )
             }
-            OutlinedTextField(
+            // lokalita: celá ČR / jen město / vlastní PSČ + okruh
+            var customZip by remember { mutableStateOf(f.city == null && f.zip.isNotBlank()) }
+            Text("Lokalita", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                FilterChip(
+                    selected = f.city == null && !customZip, label = { Text("Celá ČR") },
+                    onClick = { customZip = false; f = f.copy(city = null, zip = "") },
+                )
+                CITIES.forEach { city ->
+                    FilterChip(
+                        selected = f.city == city.id, label = { Text(city.name) },
+                        onClick = { customZip = false; f = f.copy(city = city.id, zip = "") },
+                    )
+                }
+                FilterChip(selected = customZip, label = { Text("Vlastní PSČ") }, onClick = { customZip = true; f = f.copy(city = null) })
+            }
+            if (f.city != null) {
+                Text(
+                    "Jen inzeráty z města ${cityById(f.city)?.name} — bez okolí.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (customZip) OutlinedTextField(
                 f.zip, { f = f.copy(zip = it.filter { ch -> ch.isDigit() || ch == ' ' }.take(6)) }, Modifier.fillMaxWidth(),
-                label = { Text("PSČ") }, placeholder = { Text("prázdné = celá ČR") }, singleLine = true,
+                label = { Text("PSČ") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
-            if (f.zip.isNotBlank()) {
+            if (customZip && f.zip.isNotBlank()) {
                 Text("Okruh", style = MaterialTheme.typography.labelLarge)
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     distances.forEachIndexed { i, km ->
@@ -350,7 +378,7 @@ fun FilterSheet(initial: Filters, onDismiss: () -> Unit, onApply: (Filters) -> U
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { f = f.copy(priceFrom = "", priceTo = "", zip = "") }, Modifier.weight(1f)) { Text("Vymazat") }
+                OutlinedButton(onClick = { f = f.copy(priceFrom = "", priceTo = "", zip = "", city = null) }, Modifier.weight(1f)) { Text("Vymazat") }
                 Button(onClick = { onApply(f) }, Modifier.weight(1f)) { Text("Použít") }
             }
         }

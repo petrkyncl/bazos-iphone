@@ -2,6 +2,7 @@ package cz.petrkyncl.bazosiphony.data
 
 import android.content.Context
 import cz.petrkyncl.bazosiphony.domain.Grade
+import cz.petrkyncl.bazosiphony.domain.cityById
 import cz.petrkyncl.bazosiphony.domain.IphoneKey
 import cz.petrkyncl.bazosiphony.domain.MarketItem
 import cz.petrkyncl.bazosiphony.domain.MarketStats
@@ -91,7 +92,24 @@ class Repository private constructor(context: Context) {
      * (paralelně) a výsledky spojíme podle zvoleného řazení. Další stránka pokračuje u každé
      * kategorie od jejího offsetu.
      */
-    suspend fun search(filters: Filters, prev: MultiPage? = null): MultiPage =
+    /**
+     * Hledání; s filtrem města se hledá v okruhu, který město pokryje, a výsledky se zúží podle
+     * lokality. Když jich na stránce zbude málo, stáhne se rovnou další (max. 4×).
+     */
+    suspend fun search(filters: Filters, prev: MultiPage? = null): MultiPage {
+        val city = cityById(filters.city) ?: return searchSorted(filters, prev)
+        val f = filters.copy(zip = city.zip, distanceKm = city.radiusKm)
+        var page = searchSorted(f, prev)
+        val items = page.items.filter { city.matches(it.locality) }.toMutableList()
+        var rounds = 0
+        while (items.size < PAGE_SIZE / 2 && page.hasMore && rounds++ < 4) {
+            page = searchSorted(f, page)
+            items += page.items.filter { city.matches(it.locality) }
+        }
+        return page.copy(items = items)
+    }
+
+    private suspend fun searchSorted(filters: Filters, prev: MultiPage?): MultiPage =
         if (filters.sort == Filters.SORT_NEWEST && prev?.topFallback != true) searchIgnoringTop(filters, prev)
         else searchMerged(filters.copy(sort = if (filters.sort == Filters.SORT_NEWEST) "date" else filters.sort), prev)
             .let { if (prev?.topFallback == true) it.copy(topFallback = true) else it }
@@ -197,6 +215,9 @@ class Repository private constructor(context: Context) {
         }
         return sorted
     }
+
+    /** Všechny fotky inzerátu (z detailu, sdílí cache s detailem). */
+    suspend fun images(id: String): List<String> = BazosApi.images(rawDetail(id))
 
     suspend fun suggestions(query: String): Suggestions = BazosApi.suggestions(query)
 

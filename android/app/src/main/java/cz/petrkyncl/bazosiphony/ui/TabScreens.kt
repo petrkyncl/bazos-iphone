@@ -98,7 +98,9 @@ fun DealsScreen(c: DealsController, onOpen: (Ad) -> Unit) {
                             Text("Výkup iPhonů")
                             Text(
                                 buildString {
-                                    if (s.total > 0) append("${number(s.total)} inzerátů · výhodných ${s.goodCount}")
+                                    val city = cz.petrkyncl.bazosiphony.domain.cityById(s.filters.city)
+                                    if (city != null) append("jen ${city.name} · výhodných ${s.goodCount}")
+                                    else if (s.total > 0) append("${number(s.total)} inzerátů · výhodných ${s.goodCount}")
                                     s.pricelistUpdatedAt?.let { append(" · ceník mp.cz ${ago(it)}") }
                                 },
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -106,6 +108,7 @@ fun DealsScreen(c: DealsController, onOpen: (Ad) -> Unit) {
                         }
                     },
                     actions = {
+                        ViewModeButton()
                         IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, "Menu") }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                             DropdownMenuItem(text = { Text("Aktualizovat ceník mp.cz") }, onClick = { showMenu = false; c.refreshPricelist() })
@@ -172,7 +175,7 @@ private fun CheckChip(label: String, selected: Boolean, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FavoritesScreen(items: List<Listing>, onOpen: (Listing) -> Unit, onFavorite: (Listing) -> Unit) {
-    Scaffold(contentWindowInsets = insetsWithoutBottom(), topBar = { TopAppBar(title = { Text("Oblíbené") }) }) { padding ->
+    Scaffold(contentWindowInsets = insetsWithoutBottom(), topBar = { TopAppBar(title = { Text("Oblíbené") }, actions = { ViewModeButton() }) }) { padding ->
         LazyColumn(
             Modifier.padding(padding).fillMaxSize(),
             contentPadding = PaddingValues(12.dp),

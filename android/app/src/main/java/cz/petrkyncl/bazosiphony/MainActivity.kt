@@ -139,6 +139,10 @@ private fun App(vm: MainViewModel) {
         // spotřebovat jen spodní lištu — horní inset (stavový řádek) si řeší TopAppBar jednotlivých obrazovek
         val bottom = PaddingValues(bottom = padding.calculateBottomPadding())
         Box(Modifier.fillMaxSize().padding(bottom).consumeWindowInsets(bottom)) {
+          androidx.compose.runtime.CompositionLocalProvider(
+              cz.petrkyncl.bazosiphony.ui.LocalGalleryMode provides cz.petrkyncl.bazosiphony.ui.ViewMode.gallery,
+              cz.petrkyncl.bazosiphony.ui.LocalImages provides vm.repo::images,
+          ) {
             val route = vm.current
             AnimatedContent(
                 targetState = route,
@@ -191,6 +195,7 @@ private fun App(vm: MainViewModel) {
                     )
                 }
             }
+          }
         }
     }
 
