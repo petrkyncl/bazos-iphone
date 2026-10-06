@@ -45,6 +45,7 @@ export function evaluateAd(d: BazosDetail, pricelist: Pricelist | null): Evaluat
     isTop: d.topped === true || d.topped === "true",
     views: Number(d.views) || 0,
     images: d.images ?? [],
+    thumb: d.images?.[0]?.replace("/img/1/", "/img/1m/") ?? null, // 350px náhled místo plné fotky
     locality: d.locality ?? null,
     zip: d.zip_code ?? null,
     lat: d.latitude ? Number(d.latitude) : null,

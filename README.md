@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bazoš iPhony × výkup mp.cz
 
-## Getting Started
+Web, který ukazuje iPhony z Bazoše a ke každému inzerátu přidá:
 
-First, run the development server:
+- **rozpoznaný model a kapacitu** (iPhone X až 18, SE, Air, 16e/17e…),
+- **odhad stavu A+ až D** podle textu inzerátu — **pravidla, žádné AI** (zdarma, okamžitě),
+- **výkupní cenu mp.cz** pro odhadnutý stav a **zisk** (výkup − cena inzerátu),
+- **info o prodejci**: počet inzerátů, kladné/záporné recenze, jeho další inzeráty, příznak překupníka,
+- šum: prodáno / rezervováno / poptávka / příslušenství / podezřele nízká cena, repliky, iCloud, vyměněné díly.
+
+## Spuštění
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev -- --port 3010
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Pak otevři http://localhost:3010. První načtení stáhne výkupní ceník mp.cz (~10 s), uloží ho do
+`data/mp-apple.json` a obnovuje ho nejvýš jednou denně.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Jak to funguje
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+prohlížeč ──► /api/ads ─────► Bazoš mobilní API (ads.php + ad-detail-2.php)
+                    │
+                    ├──────► mp.cz výkupní API (ceník, cache na disku)
+                    ▼
+               evaluate.ts: model → ceník, text → stav, zisk, šum
+prohlížeč ──► /api/ads/[id] ► + recenze a další inzeráty prodejce
+```
 
-## Learn More
+| Soubor | Co dělá |
+|---|---|
+| `src/lib/bazos.ts` | klient mobilního API Bazoše (zjištěno dekompilací Android appky, viz `docs/bazos-api.md`) |
+| `src/lib/mp.ts` | výkupní ceník iPhonů z mp.cz + výběr varianty podle kapacity |
+| `src/lib/matching.ts` | parser názvu iPhonu, hledání frází s negací („bez škrábanců") |
+| `src/lib/condition.ts` | pravidla stavu A+–D, baterie, varování, šum v inzerátech |
+| `src/lib/evaluate.ts` | spojí vše dohromady pro jeden inzerát |
+| `src/components/` | UI: filtry, karty, detail |
 
-To learn more about Next.js, take a look at the following resources:
+Ladění pravidel stavu: `src/lib/condition.ts` → pole `RULES` (regexy nad textem bez diakritiky).
+V detailu inzerátu jde stav přepnout ručně — zisk se ukáže pro všechny stavy.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Pozor
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Obě API jsou **neoficiální** a můžou se bez varování změnit. Aplikace je šetrná: max 6 souběžných
+požadavků na Bazoš, detaily inzerátů v cache 10 min, ceník mp.cz 1× denně.

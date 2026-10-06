@@ -16,6 +16,7 @@ export interface EvaluatedAd {
   isTop: boolean;
   views: number;
   images: string[];
+  thumb: string | null;
   locality: string | null;
   zip: string | null;
   lat: number | null;
