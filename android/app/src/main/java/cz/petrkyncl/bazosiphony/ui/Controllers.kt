@@ -223,7 +223,10 @@ class DetailController(
         scope.launch {
             try {
                 val ad = repo.ad(adId)
-                _state.update { it.copy(ad = ad) }
+                // telefon hned: z paměti zdarma, jinak automaticky jen pod denním limitem
+                val known = account.cachedPhone(ad.seller.id)
+                _state.update { it.copy(ad = ad, phone = known) }
+                if (known == null && account.canAutoReveal()) revealPhone()
                 val seller = runCatching { repo.seller(ad) }.getOrNull()
                 _state.update { it.copy(seller = seller, sellerLoading = false) }
             } catch (e: CancellationException) {
@@ -239,7 +242,7 @@ class DetailController(
     fun revealPhone() {
         _state.update { it.copy(phoneLoading = true, phoneError = null) }
         scope.launch {
-            runCatching { account.sellerPhone(adId) }
+            runCatching { account.sellerPhone(adId, _state.value.ad?.seller?.id) }
                 .onSuccess { p -> _state.update { it.copy(phone = p, phoneLoading = false) } }
                 .onFailure { e -> _state.update { it.copy(phoneError = e.message, phoneLoading = false) } }
         }
@@ -253,6 +256,8 @@ class AccountController(private val scope: CoroutineScope, private val account: 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
     val accountState get() = account.state
+    val phoneStats get() = account.phoneStats
+    fun setAutoReveal(on: Boolean) = account.setAutoReveal(on)
 
     fun requestCode(phone: String) = run({ account.requestCode(phone) }) { it.copy(codeSent = true, info = "SMS s kódem je na cestě.") }
     fun verify(code: String) = run({ account.verify(code) }) { it.copy(codeSent = false, info = "Číslo je ověřené.") }

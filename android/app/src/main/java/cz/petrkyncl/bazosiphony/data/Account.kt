@@ -69,12 +69,44 @@ class Account private constructor(context: Context) {
         _state.value = State(null, false)
     }
 
-    /** Telefon prodejce (vyžaduje ověřené číslo). */
-    suspend fun sellerPhone(adId: String): String {
+    // --- Telefon prodejce -------------------------------------------------------------
+    // Každé odkrytí čísla je volání ad-phone.php zalogované k ověřenému číslu (stejně jako na webu
+    // i v oficiální appce). Hromadné odkrývání vede k zablokování čísla → čísla se pamatují podle
+    // prodejce (phone_id) a automatické odkrývání má denní limit.
+
+    data class PhoneStats(val autoReveal: Boolean, val todayCount: Int, val dailyLimit: Int)
+
+    private val _phoneStats = MutableStateFlow(phoneStats())
+    val phoneStats: StateFlow<PhoneStats> = _phoneStats.asStateFlow()
+
+    private fun today() = java.time.LocalDate.now().toString()
+    private fun todayCount() = if (prefs.getString(KEY_COUNT_DAY, null) == today()) prefs.getInt(KEY_COUNT, 0) else 0
+    private fun phoneStats() = PhoneStats(prefs.getBoolean(KEY_AUTO, true), todayCount(), DAILY_AUTO_LIMIT)
+
+    fun setAutoReveal(on: Boolean) {
+        prefs.edit { putBoolean(KEY_AUTO, on) }
+        _phoneStats.value = phoneStats()
+    }
+
+    /** Už známé číslo prodejce (bez volání serveru). */
+    fun cachedPhone(sellerId: String?): String? = sellerId?.let { prefs.getString(KEY_PHONE_PREFIX + it, null) }
+
+    /** Smí se číslo odkrýt automaticky (ověřeno, zapnuto, pod denním limitem)? */
+    fun canAutoReveal() = _state.value.verified && prefs.getBoolean(KEY_AUTO, true) && todayCount() < DAILY_AUTO_LIMIT
+
+    /** Telefon prodejce: z paměti, jinak jedno volání ad-phone.php (vyžaduje ověřené číslo). */
+    suspend fun sellerPhone(adId: String, sellerId: String?): String {
+        cachedPhone(sellerId)?.let { return it }
         val token = prefs.getString(KEY_TOKEN, null) ?: error("Nejdřív ověř své číslo v Účtu.")
         val res = send("GET", "ad-phone.php?ad_id=$adId", null, token)
-        return res?.let { o -> listOf("phone", "phone_number", "number").firstNotNullOfOrNull { o.str(it) } }
-            ?: throw IOException("Bazoš telefon nevrátil.")
+        val phone = res?.str("phone") ?: throw IOException("Bazoš telefon nevrátil.")
+        prefs.edit {
+            sellerId?.let { putString(KEY_PHONE_PREFIX + it, phone) }
+            putString(KEY_COUNT_DAY, today())
+            putInt(KEY_COUNT, todayCount() + 1)
+        }
+        _phoneStats.value = phoneStats()
+        return phone
     }
 
     private suspend fun send(method: String, path: String, body: JsonObject?, token: String? = prefs.getString(KEY_TOKEN, null)): JsonObject? =
@@ -103,6 +135,11 @@ class Account private constructor(context: Context) {
         private const val KEY_DEVICE = "device_id"
         private const val KEY_PHONE = "phone"
         private const val KEY_TOKEN = "token"
+        private const val KEY_AUTO = "auto_reveal"
+        private const val KEY_COUNT = "reveal_count"
+        private const val KEY_COUNT_DAY = "reveal_day"
+        private const val KEY_PHONE_PREFIX = "seller_phone_"
+        const val DAILY_AUTO_LIMIT = 40
 
         @Volatile private var instance: Account? = null
         fun get(context: Context) = instance ?: synchronized(this) { instance ?: Account(context).also { instance = it } }

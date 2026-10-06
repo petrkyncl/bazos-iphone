@@ -77,6 +77,7 @@ fun DetailScreen(
     c: DetailController,
     favorite: Boolean,
     verified: Boolean,
+    autoLimitReached: Boolean,
     onBack: () -> Unit,
     onFavorite: (Ad) -> Unit,
     onOpenAd: (String) -> Unit,
@@ -128,7 +129,7 @@ fun DetailScreen(
         ) {
             if (ad.images.isNotEmpty()) item { Gallery(ad.images) { viewer = it } }
             item { Header(ad, ::open) }
-            item { ContactCard(s, verified, onReveal = c::revealPhone, onAccount = onAccount, open = ::open) }
+            item { ContactCard(s, verified, autoLimitReached, onReveal = c::revealPhone, onAccount = onAccount, open = ::open) }
             ad.plus?.let { p ->
                 if (p.issue != null || p.condition.warnings.isNotEmpty()) item { Warnings(ad) }
                 item { ConditionCard(ad) }
@@ -202,7 +203,7 @@ private fun Header(ad: Ad, open: (String) -> Unit) {
 
 /** Kontakt: telefon prodejce (jen s ověřeným číslem), jinak odkaz na ověření / Bazoš. */
 @Composable
-private fun ContactCard(s: DetailController.State, verified: Boolean, onReveal: () -> Unit, onAccount: () -> Unit, open: (String) -> Unit) {
+private fun ContactCard(s: DetailController.State, verified: Boolean, autoLimitReached: Boolean, onReveal: () -> Unit, onAccount: () -> Unit, open: (String) -> Unit) {
     val ad = s.ad ?: return
     Card(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
@@ -222,6 +223,12 @@ private fun ContactCard(s: DetailController.State, verified: Boolean, onReveal: 
                     Button(onClick = onReveal, enabled = !s.phoneLoading) {
                         Icon(Icons.Default.Phone, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
                         Text(if (s.phoneLoading) "Načítám…" else "Zobrazit telefon")
+                    }
+                    if (autoLimitReached && !s.phoneLoading) {
+                        Text(
+                            "Dnešní limit automatického zobrazení je vyčerpaný (ochrana proti zablokování čísla).",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
                     }
                 }
                 else -> {

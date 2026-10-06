@@ -13,6 +13,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.builtins.ListSerializer
+import androidx.core.content.edit
 import java.util.concurrent.ConcurrentHashMap
 
 /** Jediný přístupový bod k datům (Bazoš + ceník mp.cz) s cache v paměti. */
@@ -24,10 +26,43 @@ class Repository private constructor(context: Context) {
     private var sectionsCache: List<Section>? = null
     private val detailLimit = Semaphore(DETAIL_CONCURRENCY)
 
-    suspend fun sections(): List<Section> = sectionsCache ?: BazosApi.sections().also { sectionsCache = it }
+    // Rubriky a kategorie se mění zřídka → v paměti i na disku (týden), domovská obrazovka je pak hned.
+    private val catalogPrefs = context.applicationContext.getSharedPreferences("catalog", Context.MODE_PRIVATE)
 
-    suspend fun categories(sectionId: String): List<Category> =
-        categoryCache[sectionId] ?: BazosApi.categories(sectionId).also { categoryCache[sectionId] = it }
+    private fun catalogFresh() = System.currentTimeMillis() - catalogPrefs.getLong("at", 0) < CATALOG_MAX_AGE_MS
+
+    suspend fun sections(): List<Section> {
+        sectionsCache?.let { return it }
+        if (catalogFresh()) {
+            catalogPrefs.getString("sections", null)?.let { json ->
+                runCatching { Http.json.decodeFromString(ListSerializer(Section.serializer()), json) }.getOrNull()?.let { sectionsCache = it; return it }
+            }
+        }
+        return BazosApi.sections().also {
+            sectionsCache = it
+            catalogPrefs.edit { putString("sections", Http.json.encodeToString(ListSerializer(Section.serializer()), it)); putLong("at", System.currentTimeMillis()) }
+        }
+    }
+
+    suspend fun categories(sectionId: String): List<Category> {
+        categoryCache[sectionId]?.let { return it }
+        if (catalogFresh()) {
+            catalogPrefs.getString("cat_$sectionId", null)?.let { json ->
+                runCatching { Http.json.decodeFromString(ListSerializer(Category.serializer()), json) }.getOrNull()?.let { categoryCache[sectionId] = it; return it }
+            }
+        }
+        return BazosApi.categories(sectionId).also {
+            categoryCache[sectionId] = it
+            catalogPrefs.edit { putString("cat_$sectionId", Http.json.encodeToString(ListSerializer(Category.serializer()), it)) }
+        }
+    }
+
+    /** Kategorie všech rubrik (rychlé odkazy na domovské obrazovce). */
+    suspend fun allCategories(sections: List<Section>): Map<String, List<Category>> = coroutineScope {
+        val limit = Semaphore(4)
+        sections.map { s -> async { s.id to limit.withPermit { runCatching { categories(s.id) }.getOrDefault(emptyList()) } } }
+            .awaitAll().toMap()
+    }
 
     suspend fun search(filters: Filters, offset: Int): BazosApi.Page = BazosApi.search(filters, offset, PAGE_SIZE)
 
@@ -89,6 +124,7 @@ class Repository private constructor(context: Context) {
         const val PAGE_SIZE = 30
         private const val DETAIL_CONCURRENCY = 6
         private const val CACHE_MS = 10 * 60_000L
+        private const val CATALOG_MAX_AGE_MS = 7 * 24 * 3600_000L
 
         @Volatile private var instance: Repository? = null
         fun get(context: Context): Repository =

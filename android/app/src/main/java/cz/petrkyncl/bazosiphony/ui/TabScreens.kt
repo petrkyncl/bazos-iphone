@@ -277,9 +277,21 @@ fun AccountScreen(c: AccountController, onBack: () -> Unit) {
                         Text(formatPhone(acc.phone.orEmpty()), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                     }
                 }
+                val stats by c.phoneStats.collectAsState()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Telefon prodejce hned po otevření", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Dnes odkryto ${stats.todayCount} z ${stats.dailyLimit} automatických. Už jednou zobrazená čísla si appka pamatuje a znovu se na ně neptá.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = stats.autoReveal, onCheckedChange = c::setAutoReveal)
+                }
                 Text(
-                    "V detailu inzerátu teď můžeš zobrazit telefon prodejce a rovnou zavolat nebo napsat SMS.",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "Každé nové číslo je dotaz na Bazoš zapsaný k tvému ověřenému číslu — hromadné odkrývání vede k zablokování. " +
+                        "Proto se čísla načítají jen u inzerátů, které otevřeš, a automaticky nejvýš ${stats.dailyLimit} denně.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedButton(onClick = c::logout) { Text("Odhlásit") }
                 return@Column

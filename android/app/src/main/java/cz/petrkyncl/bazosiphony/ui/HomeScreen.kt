@@ -7,17 +7,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -46,10 +40,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.SuggestionChip
+import cz.petrkyncl.bazosiphony.data.Category
 import cz.petrkyncl.bazosiphony.data.Money
 import cz.petrkyncl.bazosiphony.data.Section
 
@@ -57,11 +56,13 @@ import cz.petrkyncl.bazosiphony.data.Section
 @Composable
 fun HomeScreen(
     sections: List<Section>,
+    categories: Map<String, List<Category>>,
     error: String?,
     verified: Boolean,
     onRetry: () -> Unit,
     onSearch: () -> Unit,
     onSection: (Section) -> Unit,
+    onCategory: (Section, Category) -> Unit,
     onDeals: () -> Unit,
     onAccount: () -> Unit,
 ) {
@@ -90,14 +91,12 @@ fun HomeScreen(
             )
         },
     ) { padding ->
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(104.dp),
+        LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
+            item {
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -111,11 +110,8 @@ fun HomeScreen(
                     Text("Hledat na celém Bazoši…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Card(
-                    onClick = onDeals,
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                ) {
+            item {
+                Card(onClick = onDeals, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.PhoneIphone, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(14.dp))
@@ -130,30 +126,42 @@ fun HomeScreen(
                     }
                 }
             }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Text("Rubriky", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp))
-            }
+            item { Text("Rubriky", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 6.dp)) }
             if (sections.isEmpty()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                item {
                     if (error != null) CenterNote("Rubriky se nenačetly: $error", action = "Zkusit znovu" to onRetry)
                     else CenterNote("Načítám rubriky…", progress = true)
                 }
             }
-            items(sections, key = { it.id }) { s ->
-                Card(
-                    onClick = { onSection(s) },
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                ) {
-                    Column(
-                        Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        AsyncImage(s.image, null, Modifier.size(48.dp))
-                        Spacer(Modifier.height(8.dp))
-                        Text(s.title, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, maxLines = 2)
-                    }
+            items(sections, key = { it.id }) { s -> SectionRow(s, categories[s.id].orEmpty(), onSection, onCategory) }
+        }
+    }
+}
+
+/** Rubrika s ikonou a rychlými odkazy na její kategorie. */
+@Composable
+private fun SectionRow(s: Section, categories: List<Category>, onSection: (Section) -> Unit, onCategory: (Section, Category) -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().clickable { onSection(s) }.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AsyncImage(s.image, null, Modifier.size(40.dp))
+            Spacer(Modifier.width(12.dp))
+            Text(s.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text("Vše", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
+        }
+        if (categories.isNotEmpty()) {
+            LazyRow(
+                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(categories, key = { it.id }) { c ->
+                    SuggestionChip(onClick = { onCategory(s, c) }, label = { Text(c.title, maxLines = 1) })
                 }
             }
         }

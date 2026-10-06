@@ -9,6 +9,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cz.petrkyncl.bazosiphony.data.Account
+import cz.petrkyncl.bazosiphony.data.Category
 import cz.petrkyncl.bazosiphony.data.FavoritesStore
 import cz.petrkyncl.bazosiphony.data.Filters
 import cz.petrkyncl.bazosiphony.data.Listing
@@ -54,10 +55,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         WatchWorker.schedule(app)
     }
 
+    private val _categories = MutableStateFlow<Map<String, List<Category>>>(emptyMap())
+    val categories = _categories.asStateFlow()
+
     fun loadSections() = viewModelScope.launch {
         _sectionsError.value = null
         runCatching { repo.sections() }
-            .onSuccess { _sections.value = it }
+            .onSuccess { secs ->
+                _sections.value = secs
+                _categories.value = repo.allCategories(secs)
+            }
             .onFailure { _sectionsError.value = it.message }
     }
 

@@ -103,9 +103,11 @@ private fun App(vm: MainViewModel) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val sections by vm.sections.collectAsState()
     val sectionsError by vm.sectionsError.collectAsState()
+    val categories by vm.categories.collectAsState()
     val favorites by vm.favorites.items.collectAsState()
     val saved by vm.savedSearches.items.collectAsState()
     val account by vm.account.state.collectAsState()
+    val phoneStats by vm.account.phoneStats.collectAsState()
     val favoriteIds = remember(favorites) { favorites.map { it.id }.toSet() }
     val newTotal = saved.sumOf { it.newCount }
 
@@ -145,10 +147,11 @@ private fun App(vm: MainViewModel) {
             ) { r ->
                 when (r) {
                     Route.Home -> HomeScreen(
-                        sections = sections, error = sectionsError, verified = account.verified,
+                        sections = sections, categories = categories, error = sectionsError, verified = account.verified,
                         onRetry = { vm.loadSections() },
                         onSearch = { vm.selectTab(Tab.SEARCH) },
                         onSection = { vm.openFilters(Filters(section = it)) },
+                        onCategory = { sec, cat -> vm.openFilters(Filters(section = sec, category = cat)) },
                         onDeals = { vm.selectTab(Tab.DEALS) },
                         onAccount = vm::openAccount,
                     )
@@ -180,6 +183,7 @@ private fun App(vm: MainViewModel) {
                         c = r.c,
                         favorite = r.c.adId in favoriteIds,
                         verified = account.verified,
+                        autoLimitReached = phoneStats.autoReveal && phoneStats.todayCount >= phoneStats.dailyLimit,
                         onBack = { vm.back() },
                         onFavorite = { vm.toggleFavorite(it.toListing()) },
                         onOpenAd = { vm.openAd(it) },
