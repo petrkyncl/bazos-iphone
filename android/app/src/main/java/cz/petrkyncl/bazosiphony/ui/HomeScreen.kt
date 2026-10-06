@@ -36,6 +36,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,6 +50,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import cz.petrkyncl.bazosiphony.data.Money
 import cz.petrkyncl.bazosiphony.data.Section
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,6 +79,7 @@ fun HomeScreen(
                     )
                 },
                 actions = {
+                    CurrencyButton()
                     IconButton(onClick = onAccount) {
                         Icon(if (verified) Icons.Default.Verified else Icons.Default.AccountCircle, "Účet")
                     }
@@ -153,3 +159,35 @@ fun HomeScreen(
         }
     }
 }
+
+/** Přepínač zobrazované měny (kurz ČNB). */
+@Composable
+private fun CurrencyButton() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var open by remember { mutableStateOf(false) }
+    androidx.compose.foundation.layout.Box {
+        androidx.compose.material3.TextButton(onClick = { open = true }) {
+            Text(if (Money.selected == "CZK") "Kč" else Money.selected, color = Color.White, fontWeight = FontWeight.SemiBold)
+        }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Text(
+                Money.ratesDate?.let { "Kurz ČNB ze dne $it" } ?: "Kurzy ČNB se nenačetly — jen Kč",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            Money.choices.forEach { r ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = {
+                        Text(
+                            if (r.code == "CZK") "CZK · koruna" else "${r.code} · ${r.name} (${czkRate(r.czkPerUnit)} Kč)",
+                            fontWeight = if (r.code == Money.selected) FontWeight.Bold else FontWeight.Normal,
+                        )
+                    },
+                    onClick = { open = false; Money.select(context, r.code) },
+                )
+            }
+        }
+    }
+}
+
+private fun czkRate(v: Double) = (if (v < 1) "%.3f" else "%.2f").format(java.util.Locale.forLanguageTag("cs-CZ"), v)

@@ -5,17 +5,30 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import cz.petrkyncl.bazosiphony.data.Money
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private val CZ = Locale.forLanguageTag("cs-CZ")
 private val NUMBER = NumberFormat.getIntegerInstance(CZ)
 private val DATE = DateTimeFormatter.ofPattern("d. M. yyyy")
 
-fun czk(n: Int?): String = if (n == null) "—" else "${NUMBER.format(n)} Kč"
+private val DECIMAL = NumberFormat.getNumberInstance(CZ).apply { maximumFractionDigits = 2; minimumFractionDigits = 2 }
+private val SYMBOLS = mapOf("EUR" to "€", "USD" to "$", "GBP" to "£", "PLN" to "zł", "JPY" to "¥")
+
+/** Cena v Kč, nebo přepočtená do zvolené měny kurzem ČNB (s „≈"). */
+fun czk(n: Int?): String = if (n == null) "—" else money(n, approx = true)
 
 fun number(n: Int): String = NUMBER.format(n)
 
-fun profitText(n: Int): String = (if (n > 0) "+" else if (n < 0) "−" else "") + czk(abs(n))
+fun profitText(n: Int): String = (if (n > 0) "+" else if (n < 0) "−" else "") + money(abs(n), approx = false)
+
+private fun money(czk: Int, approx: Boolean): String {
+    val perUnit = Money.czkPerUnit ?: return "${NUMBER.format(czk)} Kč" // čte Compose state → změna měny překreslí
+    val v = czk / perUnit
+    val amount = if (v < 10) DECIMAL.format(v) else NUMBER.format(v.roundToInt())
+    return (if (approx) "≈ " else "") + "$amount ${SYMBOLS[Money.selected] ?: Money.selected}"
+}
 
 fun storageText(gb: Int): String = if (gb >= 1024) "${gb / 1024} TB" else "$gb GB"
 

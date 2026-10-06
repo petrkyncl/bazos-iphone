@@ -12,6 +12,7 @@ import cz.petrkyncl.bazosiphony.data.Account
 import cz.petrkyncl.bazosiphony.data.FavoritesStore
 import cz.petrkyncl.bazosiphony.data.Filters
 import cz.petrkyncl.bazosiphony.data.Listing
+import cz.petrkyncl.bazosiphony.data.Money
 import cz.petrkyncl.bazosiphony.data.Repository
 import cz.petrkyncl.bazosiphony.data.SavedSearchStore
 import cz.petrkyncl.bazosiphony.data.Section
@@ -49,6 +50,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         loadSections()
+        viewModelScope.launch { Money.init(app) }
         WatchWorker.schedule(app)
     }
 
