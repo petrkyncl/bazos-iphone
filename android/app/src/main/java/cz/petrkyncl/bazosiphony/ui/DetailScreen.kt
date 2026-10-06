@@ -87,6 +87,7 @@ fun DetailScreen(
     val ad = s.ad
     val context = LocalContext.current
     var viewer by remember { mutableStateOf<Int?>(null) }
+    var message by remember { mutableStateOf(false) }
     fun open(url: String) = runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
 
     Scaffold(
@@ -134,7 +135,7 @@ fun DetailScreen(
                 }
             }
             item { Header(ad, ::open) }
-            item { ContactCard(s, verified, autoLimitReached, onReveal = c::revealPhone, onAccount = onAccount, open = ::open) }
+            item { ContactCard(s, verified, autoLimitReached, onReveal = c::revealPhone, onAccount = onAccount, onMessage = { message = true }, open = ::open) }
             ad.plus?.let { p ->
                 if (p.issue != null || p.condition.warnings.isNotEmpty()) item { Warnings(ad) }
                 item { ConditionCard(ad) }
@@ -151,6 +152,7 @@ fun DetailScreen(
     }
 
     viewer?.let { start -> ad?.let { PhotoViewer(it.images, start) { viewer = null } } }
+    if (message && ad != null) MessageSheet(ad, s.phone, onDismiss = { message = false }, openUrl = { open(it) })
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -189,7 +191,7 @@ private fun Header(ad: Ad, open: (String) -> Unit) {
 
 /** Kontakt: telefon prodejce (jen s ověřeným číslem), jinak odkaz na ověření / Bazoš. */
 @Composable
-private fun ContactCard(s: DetailController.State, verified: Boolean, autoLimitReached: Boolean, onReveal: () -> Unit, onAccount: () -> Unit, open: (String) -> Unit) {
+private fun ContactCard(s: DetailController.State, verified: Boolean, autoLimitReached: Boolean, onReveal: () -> Unit, onAccount: () -> Unit, onMessage: () -> Unit, open: (String) -> Unit) {
     val ad = s.ad ?: return
     Card(
         Modifier.padding(horizontal = 16.dp).fillMaxWidth(),
@@ -201,8 +203,8 @@ private fun ContactCard(s: DetailController.State, verified: Boolean, autoLimitR
                 s.phone != null -> {
                     Text(s.phone, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { open("tel:${s.phone}") }) { Icon(Icons.Default.Call, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Zavolat") }
-                        FilledTonalButton(onClick = { open("sms:${s.phone}") }) { Icon(Icons.AutoMirrored.Filled.Message, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("SMS") }
+                        Button(onClick = onMessage) { Icon(Icons.AutoMirrored.Filled.Message, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Napsat") }
+                        FilledTonalButton(onClick = { open("tel:${s.phone}") }) { Icon(Icons.Default.Call, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Zavolat") }
                     }
                 }
                 verified -> {
@@ -224,7 +226,7 @@ private fun ContactCard(s: DetailController.State, verified: Boolean, autoLimitR
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = onAccount) { Text("Ověřit číslo") }
-                        OutlinedButton(onClick = { open(ad.url) }) { Text("Napsat přes Bazoš") }
+                        OutlinedButton(onClick = onMessage) { Text("Připravit zprávu") }
                     }
                 }
             }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -254,6 +255,28 @@ fun WatchScreen(
 // ---------------------------------------------------------------------------
 // Účet — ověření telefonního čísla
 // ---------------------------------------------------------------------------
+/** Nastavení zprávy prodejci: jméno a šablona s {model}, {cena}, {jmeno}. */
+@Composable
+private fun MessageSettings() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var name by remember { mutableStateOf(cz.petrkyncl.bazosiphony.data.MessageTemplate.name) }
+    var template by remember { mutableStateOf(cz.petrkyncl.bazosiphony.data.MessageTemplate.template) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Zpráva prodejci", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Podpis (jméno)") }, singleLine = true)
+        OutlinedTextField(template, { template = it }, Modifier.fillMaxWidth(), label = { Text("Šablona") }, minLines = 2)
+        Text(
+            "{model} = model (např. „iphone 13 pro max“) nebo zkrácený nadpis, {cena} = cena, {jmeno} = podpis. " +
+                "Klidně bez diakritiky a s malými písmeny, ať to nevypadá jako robot.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { cz.petrkyncl.bazosiphony.data.MessageTemplate.save(context, template, name) }) { Text("Uložit") }
+            TextButton(onClick = { template = cz.petrkyncl.bazosiphony.data.MessageTemplate.DEFAULT }) { Text("Výchozí") }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountScreen(c: AccountController, onBack: () -> Unit) {
@@ -271,7 +294,9 @@ fun AccountScreen(c: AccountController, onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            MessageSettings()
+            androidx.compose.material3.HorizontalDivider()
             if (acc.verified) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Verified, null, tint = LocalStatus.current.good, modifier = Modifier.size(32.dp))

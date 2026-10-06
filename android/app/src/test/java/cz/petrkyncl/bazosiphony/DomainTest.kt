@@ -134,3 +134,20 @@ class SloppyTitlesTest {
         assertEquals(Issue.BUY_REQUEST, listingIssue("VYMĚNÍM - NABÍZEJTE", ""))
     }
 }
+
+class MessageTest {
+    @Test
+    fun humanLikeMessage() {
+        val ad = cz.petrkyncl.bazosiphony.data.Repository.evaluate(
+            kotlinx.serialization.json.buildJsonObject {
+                put("id", kotlinx.serialization.json.JsonPrimitive("1"))
+                put("title", kotlinx.serialization.json.JsonPrimitive("TOP Apple iPhone 13 Pro Max 256GB!!!"))
+                put("description", kotlinx.serialization.json.JsonPrimitive(""))
+            },
+            null,
+        )
+        assertEquals("Dobry den, je iphone 13 pro max stale na prodej? dekuji, Petr", cz.petrkyncl.bazosiphony.data.MessageTemplate.forAd(ad))
+        val other = ad.copy(title = "Autosedačka Maxi-Cosi Coral 360 + základna FamilyFix 🔥", plus = null)
+        assertEquals("Dobry den, je autosedacka maxi-cosi coral 360 stale na prodej? dekuji, Petr", cz.petrkyncl.bazosiphony.data.MessageTemplate.forAd(other))
+    }
+}

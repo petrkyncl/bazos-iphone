@@ -56,6 +56,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadSections()
         viewModelScope.launch { Money.init(app) }
         ViewMode.init(app)
+        cz.petrkyncl.bazosiphony.data.MessageTemplate.init(app)
         WatchWorker.schedule(app)
     }
 
