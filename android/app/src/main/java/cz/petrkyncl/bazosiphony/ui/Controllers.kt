@@ -42,19 +42,19 @@ class ListingController(
     data class State(
         val filters: Filters,
         val items: List<Listing> = emptyList(),
-        val total: Int = 0,
-        val nextOffset: Int = 0,
+        val page: Repository.MultiPage? = null, // offsety a počty po kategoriích
         val loading: Boolean = false,
         val loadingMore: Boolean = false,
         val error: String? = null,
         val categories: List<Category> = emptyList(),
         val plus: Map<String, Ad> = emptyMap(), // iPhony s výkupem, podle ID inzerátu
     ) {
-        val canLoadMore get() = nextOffset < total && !loading && !loadingMore
+        val total get() = page?.total ?: 0
+        val canLoadMore get() = page?.hasMore == true && !loading && !loadingMore
         val maxId get() = items.maxOfOrNull { it.id.toLongOrNull() ?: 0 } ?: 0
     }
 
-    private val _state = MutableStateFlow(State(initial))
+    private val _state = MutableStateFlow(State(initial.migrated()))
     val state: StateFlow<State> = _state.asStateFlow()
     val listState = LazyListState()
     private var job: Job? = null
@@ -67,7 +67,9 @@ class ListingController(
     private fun loadCategories() {
         val section = _state.value.filters.section ?: return _state.update { it.copy(categories = emptyList()) }
         scope.launch {
-            runCatching { repo.categories(section.id) }.onSuccess { cats -> _state.update { it.copy(categories = cats) } }
+            // hned v pořadí Bazoše, pak podle popularity (počty inzerátů, cache na týden)
+            runCatching { repo.categories(section.id) }.onSuccess { cats -> _state.update { if (it.categories.isEmpty()) it.copy(categories = cats) else it } }
+            runCatching { repo.categoriesByPopularity(section.id) }.onSuccess { cats -> _state.update { it.copy(categories = cats) } }
         }
     }
 
@@ -79,7 +81,7 @@ class ListingController(
 
     fun setFilters(filters: Filters) {
         val sectionChanged = filters.section != _state.value.filters.section
-        _state.update { it.copy(filters = filters) }
+        _state.update { it.copy(filters = filters, categories = if (sectionChanged) emptyList() else it.categories) }
         if (sectionChanged) loadCategories()
         refresh()
     }
@@ -87,16 +89,14 @@ class ListingController(
     private fun load(reset: Boolean) {
         if (reset) job?.cancel() else if (job?.isActive == true) return
         val s = _state.value
-        val offset = if (reset) 0 else s.nextOffset
-        _state.update { it.copy(loading = reset, loadingMore = !reset, error = null, items = if (reset) emptyList() else it.items) }
+        _state.update { it.copy(loading = reset, loadingMore = !reset, error = null, items = if (reset) emptyList() else it.items, page = if (reset) null else it.page) }
         job = scope.launch {
             try {
-                val page = repo.search(s.filters, offset)
+                val page = repo.search(s.filters, if (reset) null else s.page)
                 _state.update { cur ->
                     cur.copy(
                         items = (if (reset) page.items else cur.items + page.items).distinctBy { it.id },
-                        total = page.total,
-                        nextOffset = offset + Repository.PAGE_SIZE,
+                        page = page,
                         loading = false,
                         loadingMore = false,
                     )
@@ -224,7 +224,7 @@ class DetailController(
             try {
                 val ad = repo.ad(adId)
                 // telefon hned: z paměti zdarma, jinak automaticky jen pod denním limitem
-                val known = account.cachedPhone(ad.seller.id)
+                val known = account.cachedPhone(ad.seller.id, adId)
                 _state.update { it.copy(ad = ad, phone = known) }
                 if (known == null && account.canAutoReveal()) revealPhone()
                 val seller = runCatching { repo.seller(ad) }.getOrNull()

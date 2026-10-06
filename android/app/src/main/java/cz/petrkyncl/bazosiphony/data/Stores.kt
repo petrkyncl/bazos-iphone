@@ -43,11 +43,16 @@ class FavoritesStore private constructor(context: Context) : JsonListStore<Listi
 }
 
 class SavedSearchStore private constructor(context: Context) : JsonListStore<SavedSearch>(context, "saved_searches", SavedSearch.serializer()) {
-    fun find(filters: Filters) = items.value.firstOrNull { it.filters == filters.copy(sort = "date") }
+    init {
+        // starý formát (jedna kategorie) → seznam kategorií
+        if (items.value.any { it.filters != it.filters.migrated() }) update { list -> list.map { it.copy(filters = it.filters.migrated()) } }
+    }
+
+    fun find(filters: Filters) = items.value.firstOrNull { it.filters.watchKey() == filters.watchKey() }
 
     fun add(filters: Filters, currentMaxId: Long) = update { list ->
-        val f = filters.copy(sort = "date") // hlídá se vždy podle nejnovějších
-        if (list.any { it.filters == f }) list else list + SavedSearch(UUID.randomUUID().toString(), f, lastSeenMaxId = currentMaxId)
+        val f = filters.watchKey() // hlídá se vždy podle nejnovějších
+        if (list.any { it.filters.watchKey() == f }) list else list + SavedSearch(UUID.randomUUID().toString(), f, lastSeenMaxId = currentMaxId)
     }
 
     fun remove(id: String) = update { list -> list.filterNot { it.id == id } }

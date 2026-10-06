@@ -57,14 +57,72 @@ class Repository private constructor(context: Context) {
         }
     }
 
-    /** Kategorie všech rubrik (rychlé odkazy na domovské obrazovce). */
+    /** Kategorie všech rubrik (rychlé odkazy na domovské obrazovce); spočítané podle popularity, jinak pořadí Bazoše. */
     suspend fun allCategories(sections: List<Section>): Map<String, List<Category>> = coroutineScope {
         val limit = Semaphore(4)
-        sections.map { s -> async { s.id to limit.withPermit { runCatching { categories(s.id) }.getOrDefault(emptyList()) } } }
-            .awaitAll().toMap()
+        sections.map { s ->
+            async { s.id to (cachedPopularity(s.id) ?: limit.withPermit { runCatching { categories(s.id) }.getOrDefault(emptyList()) }) }
+        }.awaitAll().toMap()
     }
 
-    suspend fun search(filters: Filters, offset: Int): BazosApi.Page = BazosApi.search(filters, offset, PAGE_SIZE)
+    /** Stránka výsledků; klíč offsetů/počtů = ID kategorie („" bez kategorie). */
+    data class MultiPage(val items: List<Listing>, val totals: Map<String, Int>, val offsets: Map<String, Int>) {
+        val total get() = totals.values.sum()
+        val hasMore get() = totals.any { (k, t) -> (offsets[k] ?: 0) < t }
+    }
+
+    /**
+     * Hledání i ve více kategoriích najednou: API umí jen jednu, takže každou stáhneme zvlášť
+     * (paralelně) a výsledky spojíme podle zvoleného řazení. Další stránka pokračuje u každé
+     * kategorie od jejího offsetu.
+     */
+    suspend fun search(filters: Filters, prev: MultiPage? = null): MultiPage = coroutineScope {
+        val keys = filters.categories.map { it.id }.ifEmpty { listOf("") }
+        val perPage = if (keys.size == 1) PAGE_SIZE else maxOf(10, PAGE_SIZE / keys.size + 5)
+        val pending = keys.filter { k -> prev == null || (prev.offsets[k] ?: 0) < (prev.totals[k] ?: 0) }
+        val pages = pending.map { k ->
+            async {
+                val f = filters.copy(categories = filters.categories.filter { it.id == k })
+                k to BazosApi.search(f, prev?.offsets?.get(k) ?: 0, perPage)
+            }
+        }.awaitAll()
+        val items = pages.flatMap { it.second.items }.distinctBy { it.id }
+        val sorted = when (filters.sort) {
+            "price_asc" -> items.sortedWith(compareBy(nullsLast()) { it.price })
+            "price_desc" -> items.sortedWith(compareByDescending<Listing> { it.price ?: -1 })
+            else -> items.sortedWith(compareByDescending<Listing> { it.isTop }.thenByDescending { it.id.toLongOrNull() ?: 0 })
+        }
+        MultiPage(
+            items = if (keys.size == 1) pages.flatMap { it.second.items } else sorted, // jedna kategorie: pořadí přesně podle Bazoše
+            totals = (prev?.totals ?: emptyMap()) + pages.associate { (k, p) -> k to p.total },
+            offsets = (prev?.offsets ?: emptyMap()) + pages.associate { (k, p) -> k to (prev?.offsets?.get(k) ?: 0) + perPage },
+        )
+    }
+
+    // --- Popularita kategorií (počet inzerátů), cache na týden ---------------------------
+    private val countLimit = Semaphore(3)
+
+    // Popularita se zjišťuje jen pro rubriku, kterou uživatel otevře (~20 dotazů), a drží se 30 dní.
+    private fun cachedPopularity(sectionId: String): List<Category>? {
+        if (System.currentTimeMillis() - catalogPrefs.getLong("counts_at_$sectionId", 0) > POPULARITY_MAX_AGE_MS) return null
+        val json = catalogPrefs.getString("counts_$sectionId", null) ?: return null
+        return runCatching { Http.json.decodeFromString(ListSerializer(Category.serializer()), json) }.getOrNull()
+    }
+
+    /** Kategorie rubriky seřazené podle počtu inzerátů (nejpopulárnější první). */
+    suspend fun categoriesByPopularity(sectionId: String): List<Category> {
+        cachedPopularity(sectionId)?.let { return it }
+        val counted = coroutineScope {
+            categories(sectionId).map { c ->
+                async { c.copy(count = countLimit.withPermit { runCatching { BazosApi.categoryCount(sectionId, c.id) }.getOrNull() }) }
+            }.awaitAll()
+        }.sortedByDescending { it.count ?: -1 }
+        if (counted.all { it.count != null }) catalogPrefs.edit {
+            putString("counts_$sectionId", Http.json.encodeToString(ListSerializer(Category.serializer()), counted))
+            putLong("counts_at_$sectionId", System.currentTimeMillis())
+        }
+        return counted
+    }
 
     suspend fun suggestions(query: String): Suggestions = BazosApi.suggestions(query)
 
@@ -87,10 +145,10 @@ class Repository private constructor(context: Context) {
     suspend fun phoneDeals(filters: Filters, offset: Int): Triple<List<Ad>, Int, Long?> = coroutineScope {
         val f = filters.copy(
             section = Section(BazosApi.SECTION_MOBILES, "Mobily"),
-            category = Category(BazosApi.CATEGORY_APPLE, "Apple"),
+            categories = listOf(Category(BazosApi.CATEGORY_APPLE, "Apple")),
             query = filters.query.ifBlank { "iphone" },
         )
-        val listDeferred = async { search(f, offset) }
+        val listDeferred = async { BazosApi.search(f, offset, PAGE_SIZE) }
         val prices = runCatching { pricelist.get() }.getOrNull()
         val page = listDeferred.await()
         val ads = page.items.map { l -> async { runCatching { evaluate(rawDetail(l.id), prices) }.getOrNull() } }.awaitAll().filterNotNull()
@@ -125,6 +183,7 @@ class Repository private constructor(context: Context) {
         private const val DETAIL_CONCURRENCY = 6
         private const val CACHE_MS = 10 * 60_000L
         private const val CATALOG_MAX_AGE_MS = 7 * 24 * 3600_000L
+        private const val POPULARITY_MAX_AGE_MS = 30 * 24 * 3600_000L
 
         @Volatile private var instance: Repository? = null
         fun get(context: Context): Repository =

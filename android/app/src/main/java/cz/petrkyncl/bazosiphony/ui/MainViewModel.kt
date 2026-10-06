@@ -63,6 +63,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { repo.sections() }
             .onSuccess { secs ->
                 _sections.value = secs
+                // u rubrik, které už uživatel otevřel, rovnou podle popularity (z cache)
                 _categories.value = repo.allCategories(secs)
             }
             .onFailure { _sectionsError.value = it.message }

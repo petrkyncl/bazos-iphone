@@ -35,13 +35,15 @@ object BazosApi {
         }
     }
 
+    /** Hledání v jedné kategorii (API víc najednou neumí — čárka vrací 0, opakovaný parametr bere poslední). */
     suspend fun search(f: Filters, offset: Int, limit: Int): Page {
+        require(f.categories.size <= 1) { "víc kategorií spojuje Repository.search" }
         val zip = f.zip.filter(Char::isDigit)
         val (json, headers) = Http.get(
             BASE + "ads.php",
             mapOf(
                 "section" to f.section?.id,
-                "category" to f.category?.id,
+                "category" to f.categories.firstOrNull()?.id,
                 "sort" to f.sort,
                 "query" to f.query.trim(),
                 "price_from" to f.priceFrom,
@@ -137,3 +139,7 @@ object BazosApi {
     fun images(d: JsonObject): List<String> =
         (d["images"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.content }
 }
+
+/** Počet inzerátů v kategorii (hlavička x-total-count, stačí limit=1). */
+suspend fun BazosApi.categoryCount(sectionId: String, categoryId: String): Int? =
+    search(Filters(section = Section(sectionId, ""), categories = listOf(Category(categoryId, ""))), 0, 1).total

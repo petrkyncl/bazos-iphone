@@ -28,7 +28,7 @@ class WatchWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         val store = SavedSearchStore.get(applicationContext).apply { reload() }
         val repo = Repository.get(applicationContext)
         for (s in store.items.value) {
-            val page = runCatching { repo.search(s.filters, 0) }.getOrNull() ?: continue
+            val page = runCatching { repo.search(s.filters.migrated()) }.getOrNull() ?: continue
             val fresh = page.items.filter { (it.id.toLongOrNull() ?: 0) > s.lastSeenMaxId }
             if (fresh.size == s.newCount) continue
             store.setNewCount(s.id, fresh.size)

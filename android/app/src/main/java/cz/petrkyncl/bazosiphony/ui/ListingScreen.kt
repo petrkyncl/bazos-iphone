@@ -119,7 +119,7 @@ fun ListingScreen(
 
     val title = when {
         searchMode -> "Hledat na Bazoši"
-        f.category != null -> f.category.title
+        f.categoriesLabel != null -> f.categoriesLabel!!
         f.section != null -> f.section.title
         else -> "Inzeráty"
     }
@@ -134,7 +134,7 @@ fun ListingScreen(
                             Text(title, maxLines = 1)
                             if (state.total > 0) {
                                 Text(
-                                    "${number(state.total)} inzerátů" + if (f.category != null && f.section != null) " · ${f.section.title}" else "",
+                                    "${number(state.total)} inzerátů" + if (f.categories.isNotEmpty() && f.section != null) " · ${f.section.title}" else "",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -177,10 +177,17 @@ fun ListingScreen(
                         modifier = Modifier.padding(top = 8.dp),
                     ) {
                         item {
-                            FilterChip(selected = f.category == null, onClick = { submit(f.copy(category = null)) }, label = { Text("Vše") })
+                            FilterChip(selected = f.categories.isEmpty(), onClick = { submit(f.copy(categories = emptyList())) }, label = { Text("Vše") })
                         }
+                        // víc kategorií najednou: ťuknutí přidá/odebere
                         items(state.categories, key = { it.id }) { cat ->
-                            FilterChip(selected = f.category?.id == cat.id, onClick = { submit(f.copy(category = cat)) }, label = { Text(cat.title) })
+                            val on = cat in f.categories
+                            FilterChip(
+                                selected = on,
+                                onClick = { submit(f.copy(categories = if (on) f.categories - cat else f.categories + cat)) },
+                                label = { Text(cat.title + (cat.count?.let { " · ${compactCount(it)}" } ?: "")) },
+                                leadingIcon = if (on) ({ Icon(Icons.Default.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }) else null,
+                            )
                         }
                     }
                 }
@@ -204,8 +211,8 @@ fun ListingScreen(
             SuggestionList(
                 suggestions, query, Modifier.padding(padding),
                 onKeyword = { kw -> query = kw; submit(f.copy(query = kw)) },
-                onCategory = { sec, cat -> submit(f.copy(query = query, section = sec, category = cat)) },
-                onSection = { sec -> submit(f.copy(query = query, section = sec, category = null)) },
+                onCategory = { sec, cat -> submit(f.copy(query = query, section = sec, categories = listOf(cat))) },
+                onSection = { sec -> submit(f.copy(query = query, section = sec, categories = emptyList())) },
                 onSearch = { submit(f.copy(query = query)) },
             )
             return@Scaffold
@@ -334,4 +341,11 @@ fun FilterSheet(initial: Filters, onDismiss: () -> Unit, onApply: (Filters) -> U
             }
         }
     }
+}
+
+/** 6223 → „6,2 tis.", 845 → „845". */
+fun compactCount(n: Int): String = when {
+    n >= 10_000 -> "${n / 1000} tis."
+    n >= 1_000 -> "%.1f tis.".format(java.util.Locale.forLanguageTag("cs-CZ"), n / 1000.0)
+    else -> n.toString()
 }

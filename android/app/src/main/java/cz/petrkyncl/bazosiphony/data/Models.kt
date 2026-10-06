@@ -10,13 +10,19 @@ import kotlinx.serialization.Serializable
 data class Section(val id: String, val title: String, val image: String? = null)
 
 @Serializable
-data class Category(val id: String, val title: String)
+data class Category(val id: String, val title: String, val count: Int? = null) {
+    // počet inzerátů se mění → do porovnání (uložená hledání, výběr) nepatří
+    override fun equals(other: Any?) = other is Category && other.id == id
+    override fun hashCode() = id.hashCode()
+}
 
 /** Parametry hledání — stejné jako v oficiální appce (ads.php). */
 @Serializable
 data class Filters(
     val query: String = "",
     val section: Section? = null,
+    val categories: List<Category> = emptyList(), // víc značek najednou → appka spojí výsledky
+    @Deprecated("jen kvůli starým uloženým hledáním — použij categories")
     val category: Category? = null,
     val priceFrom: String = "",
     val priceTo: String = "",
@@ -26,10 +32,24 @@ data class Filters(
 ) {
     val activeCount get() = listOf(priceFrom, priceTo, zip).count { it.isNotBlank() }
 
+    /** Klíč pro porovnání uložených hledání (pořadí kategorií ani řazení nehraje roli). */
+    fun watchKey(): Filters = copy(sort = "date", categories = categories.sortedBy { it.id })
+
+    /** Převod starého formátu (jedna kategorie) na nový. */
+    @Suppress("DEPRECATION")
+    fun migrated(): Filters = if (category == null) this else copy(categories = (categories + category).distinct(), category = null)
+
+    val categoriesLabel: String?
+        get() = when (categories.size) {
+            0 -> null
+            1, 2, 3 -> categories.joinToString(" + ") { it.title }
+            else -> "${categories.size} kategorií"
+        }
+
     /** Krátký popis pro uložená hledání a nadpisy. */
     fun label(): String = listOfNotNull(
         query.trim().takeIf { it.isNotEmpty() }?.let { "„$it“" },
-        category?.title ?: section?.title,
+        categoriesLabel ?: section?.title,
         if (priceFrom.isNotBlank() || priceTo.isNotBlank()) "${priceFrom.ifBlank { "0" }}–${priceTo.ifBlank { "∞" }} Kč" else null,
         zip.takeIf { it.isNotBlank() }?.let { "$it +$distanceKm km" },
     ).joinToString(" · ").ifEmpty { "Všechny inzeráty" }

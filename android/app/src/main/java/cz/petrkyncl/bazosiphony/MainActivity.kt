@@ -151,7 +151,7 @@ private fun App(vm: MainViewModel) {
                         onRetry = { vm.loadSections() },
                         onSearch = { vm.selectTab(Tab.SEARCH) },
                         onSection = { vm.openFilters(Filters(section = it)) },
-                        onCategory = { sec, cat -> vm.openFilters(Filters(section = sec, category = cat)) },
+                        onCategory = { sec, cat -> vm.openFilters(Filters(section = sec, categories = listOf(cat))) },
                         onDeals = { vm.selectTab(Tab.DEALS) },
                         onAccount = vm::openAccount,
                     )
@@ -162,7 +162,7 @@ private fun App(vm: MainViewModel) {
                         ListingScreen(
                             c = r.c, searchMode = r.searchMode, canGoBack = vm.stack.size > 1, repo = vm.repo,
                             favoriteIds = favoriteIds,
-                            watched = saved.any { it.filters == ls.filters.copy(sort = "date") },
+                            watched = saved.any { it.filters.watchKey() == ls.filters.watchKey() },
                             onBack = { vm.back() },
                             onOpen = { vm.openAd(it.id, it) },
                             onFavorite = vm::toggleFavorite,

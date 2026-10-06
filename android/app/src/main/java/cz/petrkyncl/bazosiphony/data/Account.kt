@@ -88,20 +88,23 @@ class Account private constructor(context: Context) {
         _phoneStats.value = phoneStats()
     }
 
-    /** Už známé číslo prodejce (bez volání serveru). */
-    fun cachedPhone(sellerId: String?): String? = sellerId?.let { prefs.getString(KEY_PHONE_PREFIX + it, null) }
+    /** Už známé číslo (bez volání serveru): podle prodejce, záložně podle inzerátu. */
+    fun cachedPhone(sellerId: String?, adId: String): String? =
+        sellerId?.let { prefs.getString(KEY_PHONE_PREFIX + it, null) } ?: prefs.getString(KEY_AD_PHONE_PREFIX + adId, null)
 
     /** Smí se číslo odkrýt automaticky (ověřeno, zapnuto, pod denním limitem)? */
     fun canAutoReveal() = _state.value.verified && prefs.getBoolean(KEY_AUTO, true) && todayCount() < DAILY_AUTO_LIMIT
 
     /** Telefon prodejce: z paměti, jinak jedno volání ad-phone.php (vyžaduje ověřené číslo). */
     suspend fun sellerPhone(adId: String, sellerId: String?): String {
-        cachedPhone(sellerId)?.let { return it }
+        cachedPhone(sellerId, adId)?.let { return it }
         val token = prefs.getString(KEY_TOKEN, null) ?: error("Nejdřív ověř své číslo v Účtu.")
-        val res = send("GET", "ad-phone.php?ad_id=$adId", null, token)
+        // stejně jako oficiální appka: ID inzerátu + ID telefonu prodejce (phone_id z detailu)
+        val res = send("GET", "ad-phone.php?ad_id=$adId" + (sellerId?.let { "&phone_id=$it" } ?: ""), null, token)
         val phone = res?.str("phone") ?: throw IOException("Bazoš telefon nevrátil.")
         prefs.edit {
             sellerId?.let { putString(KEY_PHONE_PREFIX + it, phone) }
+            putString(KEY_AD_PHONE_PREFIX + adId, phone)
             putString(KEY_COUNT_DAY, today())
             putInt(KEY_COUNT, todayCount() + 1)
         }
@@ -123,7 +126,7 @@ class Account private constructor(context: Context) {
                 val obj = runCatching { Http.json.parseToJsonElement(text) as? JsonObject }.getOrNull()
                 if (!res.isSuccessful || obj?.str("error_code") != null) {
                     // Bazoš vrací srozumitelné české hlášky („Číslo je neověřené", „Špatný kód"…)
-                    throw IOException(obj?.str("message") ?: "HTTP ${res.code}")
+                    throw IOException(obj?.str("message") ?: "HTTP ${res.code}: ${text.take(160).ifBlank { "prázdná odpověď" }}")
                 }
                 obj
             }
@@ -139,6 +142,7 @@ class Account private constructor(context: Context) {
         private const val KEY_COUNT = "reveal_count"
         private const val KEY_COUNT_DAY = "reveal_day"
         private const val KEY_PHONE_PREFIX = "seller_phone_"
+        private const val KEY_AD_PHONE_PREFIX = "ad_phone_"
         const val DAILY_AUTO_LIMIT = 40
 
         @Volatile private var instance: Account? = null
