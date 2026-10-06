@@ -259,11 +259,31 @@ class Repository private constructor(context: Context) {
         return sorted
     }
 
+    /** Model pro výběr: výkup mp.cz „od" (nejlevnější kapacita, stav B; jinak A). */
+    data class ModelOption(val key: IphoneKey, val label: String, val buyoutFrom: Int?)
+
     /** Všechny iPhony z ceníku mp.cz, od nejnovější generace (pro výběr modelů). */
-    suspend fun iphoneModels(): List<IphoneKey> {
+    suspend fun iphoneModels(): List<ModelOption> {
         val list = runCatching { pricelist.get() }.getOrNull() ?: return emptyList()
-        return list.items.mapNotNull { parseIphone(it.variant)?.takeIf { k -> k.number != null } }
-            .map { it.copy(storageGb = null) }.distinct().sortedWith(iphoneOrder)
+        return list.items.mapNotNull { v -> parseIphone(v.variant)?.takeIf { it.number != null }?.let { it.copy(storageGb = null) to v } }
+            .groupBy({ it.first }, { it.second })
+            .map { (key, variants) ->
+                ModelOption(key, modelLabel(key), variants.mapNotNull { it.buy["B"] ?: it.buy["A"] }.minOrNull())
+            }
+            .sortedWith(compareBy(iphoneOrder) { it.key })
+    }
+
+    // Medián modelu (všechny kapacity) pro výběr modelů — v telefonu na 12 h, ať se 37 modelů nestahuje pořád.
+    private val medianPrefs = context.applicationContext.getSharedPreferences("model_medians", Context.MODE_PRIVATE)
+
+    /** Medián ceny modelu na Bazoši (všechny kapacity) a počet inzerátů; null = málo dat. */
+    suspend fun modelMedian(key: IphoneKey): Pair<Int, Int>? {
+        val k = modelLabel(key)
+        medianPrefs.getString(k, null)?.split("|")?.takeIf { it.size == 3 && System.currentTimeMillis() - it[0].toLong() < 12 * 3600_000L }
+            ?.let { return if (it[1] == "-") null else it[1].toInt() to it[2].toInt() }
+        val m = market(key.copy(storageGb = null))
+        medianPrefs.edit { putString(k, "${System.currentTimeMillis()}|${m?.median ?: "-"}|${m?.count ?: 0}") }
+        return m?.let { it.median to it.count }
     }
 
     /** Kapacity, které u vybraných modelů existují (pro výběr kapacity). */
