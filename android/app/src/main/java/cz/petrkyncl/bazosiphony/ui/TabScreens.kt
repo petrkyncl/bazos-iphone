@@ -72,7 +72,7 @@ import cz.petrkyncl.bazosiphony.data.SavedSearch
 // ---------------------------------------------------------------------------
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DealsScreen(c: DealsController, onOpen: (Ad) -> Unit) {
+fun DealsScreen(c: DealsController, repo: cz.petrkyncl.bazosiphony.data.Repository, onOpen: (Ad) -> Unit) {
     val s by c.state.collectAsState()
     var showFilters by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
@@ -134,6 +134,7 @@ fun DealsScreen(c: DealsController, onOpen: (Ad) -> Unit) {
                         label = { Text(if (s.filters.activeCount > 0) "Filtry (${s.filters.activeCount})" else "Filtry") },
                         leadingIcon = { Icon(Icons.Default.FilterList, null, Modifier.size(FilterChipDefaults.IconSize)) },
                     )
+                    ModelsChip(s.filters, repo) { c.setFilters(it) }
                     SortChip(s.sort.name, DealsController.Sort.entries.map { it.name to it.label + if (it == DealsController.Sort.PROFIT) " (z načtených)" else "" }) {
                         c.setSort(DealsController.Sort.valueOf(it))
                     }

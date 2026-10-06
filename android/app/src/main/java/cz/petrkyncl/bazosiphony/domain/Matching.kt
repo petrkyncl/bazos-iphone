@@ -42,7 +42,11 @@ private fun extractStorage(norm: String): Int? {
 
 /** Rozparsuje název iPhonu. `null`, když text iPhone neobsahuje. */
 fun parseIphone(text: String): IphoneKey? {
-    val norm = normalize(text).replace(Regex("\\bi phone\\b"), "iphone") // „I PHONE", „i-phone"
+    var norm = normalize(text)
+        .replace(Regex("\\bi phone\\b"), "iphone") // „I PHONE", „i-phone"
+        .replace(Regex("\\b(iphohe|iphnoe|ipone|iphon|ifone|aiphone)\\b"), "iphone") // časté překlepy
+    // „Apple 16 Pro", „Phone 17 Pro" (bez „iPhone"); ne „Apple Watch 9", ne „Nothing Phone 2"
+    norm = norm.replace(Regex("^(apple )?phone (?=\\d)"), "iphone ").replace(Regex("\\bapple (?=\\d{1,2}\\b)"), "iphone ")
     val tokens = norm.split(Regex("[\\s/]+"))
     val idx = tokens.indexOf("iphone")
     if (idx < 0) return null

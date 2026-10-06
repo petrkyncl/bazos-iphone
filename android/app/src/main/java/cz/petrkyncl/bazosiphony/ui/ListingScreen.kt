@@ -1,6 +1,8 @@
 package cz.petrkyncl.bazosiphony.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -199,7 +201,7 @@ fun ListingScreen(
                 }
                 if (!focused) {
                     Row(
-                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         FilterChip(
@@ -208,6 +210,17 @@ fun ListingScreen(
                             leadingIcon = { Icon(Icons.Default.FilterList, null, Modifier.size(FilterChipDefaults.IconSize)) },
                         )
                         SortChip(f.sort, SORTS) { submit(f.copy(sort = it)) }
+                        if (f.section?.id == "MO" || f.models.isNotEmpty()) {
+                            FilterChip(
+                                selected = f.hideNoise, onClick = { submit(f.copy(hideNoise = !f.hideNoise)) },
+                                label = { Text("Bez šumu") },
+                                leadingIcon = if (f.hideNoise) ({ Icon(Icons.Default.Check, null, Modifier.size(FilterChipDefaults.IconSize)) }) else null,
+                            )
+                        }
+                        // konkrétní modely: v Mobilech (Apple / bez značky) nebo když už jsou vybrané
+                        if (f.models.isNotEmpty() || (f.section?.id == "MO" && (f.categories.isEmpty() || f.categories.any { it.id == "439" }))) {
+                            ModelsChip(f, repo) { submit(it) }
+                        }
                     }
                 }
             }

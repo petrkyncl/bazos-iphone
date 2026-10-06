@@ -104,3 +104,33 @@ class AttributesTest {
         assertNull(w("iPhone 12", "Telefon je bez záruky."))
     }
 }
+
+class NoiseTest {
+    @Test
+    fun otherAppleDevicesAndAccessories() {
+        for (t in listOf("AirPods Pro 2", "Apple Watch Series 9 45mm", "Air Pods 3", "AirTag 4 balení", "Řemínek Apple Watch", "Apple TV 4K", "Kryt na iPhone 15")) {
+            assertEquals(t, Issue.NOT_PHONE, listingIssue(t, ""))
+        }
+        assertNull(listingIssue("iPhone 15 Pro 128GB", ""))
+        assertNull(listingIssue("iPhone 13 + kryt a sklo", ""))
+        // „iPhone 15 Pro kryt" za 300 Kč — díky ceně pod výkupem
+        assertEquals(Issue.NOT_PHONE, cz.petrkyncl.bazosiphony.domain.priceIssue("iPhone 15 Pro kryt", 300, 10000))
+    }
+}
+
+class SloppyTitlesTest {
+    private fun label(t: String) = parseIphone(t)?.takeIf { it.number != null }?.let { modelLabel(it) + " " + it.storageGb }
+
+    @Test
+    fun parsesWithoutIphoneWord() {
+        assertEquals("iPhone 16 Pro 128", label("Apple 16 Pro Desert Titanium 128GB - TOP s doklady"))
+        assertEquals("iPhone 17 Pro 256", label("Phone 17 Pro 256 GB Deep Blue – 99 % baterie – CZ"))
+        assertEquals("iPhone 17 Pro 256", label("Iphohe 17 Pro Silver 256Gb"))
+        assertEquals("iPhone 14 Pro Max null", label("Apple 14 pro max"))
+        assertNull(label("Nothing Phone 2 256GB"))
+        assertNull(label("Apple Watch 9 45mm"))
+        assertEquals(Issue.NOT_PHONE, listingIssue("iPody 4", ""))
+        assertEquals(Issue.NOT_PHONE, listingIssue("Apple watche 7 45mm", ""))
+        assertEquals(Issue.BUY_REQUEST, listingIssue("VYMĚNÍM - NABÍZEJTE", ""))
+    }
+}

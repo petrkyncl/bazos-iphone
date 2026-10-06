@@ -173,7 +173,7 @@ private fun App(vm: MainViewModel) {
                             onWatch = { f, maxId -> vm.saveSearch(f, maxId); askNotifications() },
                         )
                     }
-                    is Route.Deals -> DealsScreen(r.c, onOpen = { vm.openAd(it.id, it.toListing()) })
+                    is Route.Deals -> DealsScreen(r.c, vm.repo, onOpen = { vm.openAd(it.id, it.toListing()) })
                     Route.Favorites -> FavoritesScreen(favorites, onOpen = { vm.openAd(it.id, it) }, onFavorite = vm::toggleFavorite)
                     Route.Watch -> WatchScreen(
                         items = saved, notificationsAllowed = notificationsAllowed,

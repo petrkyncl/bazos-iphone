@@ -29,6 +29,9 @@ data class Filters(
     val zip: String = "",
     val distanceKm: Int = 25,
     val city: String? = null, // jen dané město (CITIES); přebíjí zip + okruh
+    val models: List<String> = emptyList(), // konkrétní iPhony („iPhone 15 Pro") — víc najednou
+    val storages: List<Int> = emptyList(), // kapacity v GB (jen s vybranými modely)
+    val hideNoise: Boolean = true, // v Mobilech skrýt příslušenství, AirPods/Watch, poptávky, prodané
     val sort: String = SORT_NEWEST, // newest (podle vložení, bez TOPu) | date (jako Bazoš, TOP první) | price_asc | price_desc
 ) {
     companion object {
@@ -38,7 +41,7 @@ data class Filters(
     val activeCount get() = listOf(priceFrom, priceTo, zip).count { it.isNotBlank() } + (if (city != null) 1 else 0)
 
     /** Klíč pro porovnání uložených hledání (pořadí kategorií ani řazení nehraje roli). */
-    fun watchKey(): Filters = copy(sort = SORT_NEWEST, categories = categories.sortedBy { it.id })
+    fun watchKey(): Filters = copy(sort = SORT_NEWEST, categories = categories.sortedBy { it.id }, models = models.sorted(), storages = storages.sorted())
 
     /** Převod starého formátu (jedna kategorie) na nový. */
     @Suppress("DEPRECATION")
@@ -54,7 +57,10 @@ data class Filters(
     /** Krátký popis pro uložená hledání a nadpisy. */
     fun label(): String = listOfNotNull(
         query.trim().takeIf { it.isNotEmpty() }?.let { "„$it“" },
-        categoriesLabel ?: section?.title,
+        models.takeIf { it.isNotEmpty() }?.let { m ->
+            (if (m.size <= 3) m.joinToString(" + ") else "${m.size} modelů") +
+                (storages.takeIf { it.isNotEmpty() }?.joinToString("/", prefix = " ") { if (it >= 1024) "${it / 1024} TB" else "$it GB" } ?: "")
+        } ?: categoriesLabel ?: section?.title,
         if (priceFrom.isNotBlank() || priceTo.isNotBlank()) "${priceFrom.ifBlank { "0" }}–${priceTo.ifBlank { "∞" }} Kč" else null,
         cz.petrkyncl.bazosiphony.domain.cityById(city)?.name ?: zip.takeIf { it.isNotBlank() }?.let { "$it +$distanceKm km" },
     ).joinToString(" · ").ifEmpty { "Všechny inzeráty" }

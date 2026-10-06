@@ -97,16 +97,59 @@ class Repository private constructor(context: Context) {
      * lokality. Když jich na stránce zbude málo, stáhne se rovnou další (max. 4×).
      */
     suspend fun search(filters: Filters, prev: MultiPage? = null): MultiPage {
-        val city = cityById(filters.city) ?: return searchSorted(filters, prev)
-        val f = filters.copy(zip = city.zip, distanceKm = city.radiusKm)
+        val city = cityById(filters.city)
+        val models = filters.models.toSet()
+        val noiseFilter = filters.hideNoise && (filters.section?.id == BazosApi.SECTION_MOBILES || models.isNotEmpty())
+        if (city == null && models.isEmpty() && !noiseFilter) return searchSorted(filters, prev)
+        val prices = if (noiseFilter) runCatching { pricelist.get() }.getOrNull() else null
+        val f = if (city != null) filters.copy(zip = city.zip, distanceKm = city.radiusKm) else filters
+        // dodatečný filtr: lokalita města a přesný model/kapacita z nadpisu (15 Pro ≠ 15 Pro Max)
+        fun keep(l: Listing): Boolean {
+            if (city != null && !city.matches(l.locality)) return false
+            if (noiseFilter && noise(l, prices) != null) return false
+            if (models.isEmpty()) return true
+            val k = parseIphone(l.title)?.takeIf { it.number != null } ?: return false
+            return modelLabel(k) in models && (filters.storages.isEmpty() || k.storageGb in filters.storages) &&
+                listingIssue(l.title, "") == null
+        }
         var page = searchSorted(f, prev)
-        val items = page.items.filter { city.matches(it.locality) }.toMutableList()
+        val items = page.items.filter(::keep).toMutableList()
         var rounds = 0
         while (items.size < PAGE_SIZE / 2 && page.hasMore && rounds++ < 4) {
             page = searchSorted(f, page)
-            items += page.items.filter { city.matches(it.locality) }
+            items += page.items.filter(::keep)
         }
         return page.copy(items = items)
+    }
+
+    /**
+     * Šum ve výpisu mobilů jen z nadpisu a ceny: příslušenství, jiná zařízení (AirPods, Watch, iPad…),
+     * poptávky, prodané/rezervované a „iPhone 15 Pro kryt" za 300 Kč (cena hluboko pod výkupem).
+     */
+    fun noise(l: Listing, prices: Pricelist?): cz.petrkyncl.bazosiphony.domain.Issue? {
+        listingIssue(l.title, "")?.let { return it }
+        val key = parseIphone(l.title)?.takeIf { it.number != null } ?: return null
+        val match = prices?.let { MpPricelist.match(key, it) } ?: return null
+        val working = match.first.buy.filterKeys { it != Grade.D.code }.values.minOrNull()
+        return priceIssue(l.title, l.price, working)?.takeIf { it.excludes } // podezřelá cena jen varuje, nevyřazuje
+    }
+
+    /**
+     * Dílčí hledání, ze kterých se výsledky spojují: každá vybraná kategorie × každý vybraný model
+     * (API umí jen jednu kategorii a fulltext). Klíč = „kategorie|dotaz".
+     */
+    private fun streams(f: Filters): List<Pair<String, Filters>> {
+        val withModels = f.models.isNotEmpty()
+        val cats: List<Category?> = if (withModels) listOf(Category(BazosApi.CATEGORY_APPLE, "Apple")) else f.categories.ifEmpty { listOf(null) }
+        val queries: List<String> = if (withModels) f.models.map { (it.lowercase().replace("(", "").replace(")", "") + " " + f.query).trim() } else listOf(f.query)
+        return cats.flatMap { c ->
+            queries.map { q ->
+                "${c?.id.orEmpty()}|$q" to f.copy(
+                    categories = listOfNotNull(c), query = q, models = emptyList(), storages = emptyList(),
+                    section = if (withModels) Section(BazosApi.SECTION_MOBILES, "Mobily") else f.section,
+                )
+            }
+        }
     }
 
     private suspend fun searchSorted(filters: Filters, prev: MultiPage?): MultiPage =
@@ -120,7 +163,8 @@ class Repository private constructor(context: Context) {
      * stažené inzeráty řadíme podle ID a vydáme jen ty, které už žádný další (starší) netopovaný nepředběhne.
      */
     private suspend fun searchIgnoringTop(filters: Filters, prev: MultiPage?): MultiPage = coroutineScope {
-        val keys = filters.categories.map { it.id }.ifEmpty { listOf("") }
+        val streams = streams(filters).toMap()
+        val keys = streams.keys.toList()
         val perPage = if (keys.size == 1) 200 else 100
         var totals = prev?.totals ?: emptyMap()
         var offsets = prev?.offsets ?: emptyMap()
@@ -143,8 +187,7 @@ class Repository private constructor(context: Context) {
             }
             val pages = pending.map { k ->
                 async {
-                    val f = filters.copy(sort = "date", categories = filters.categories.filter { it.id == k })
-                    k to BazosApi.search(f, offsets[k] ?: 0, perPage)
+                    k to BazosApi.search(streams.getValue(k).copy(sort = "date"), offsets[k] ?: 0, perPage)
                 }
             }.awaitAll()
             rounds++
@@ -164,13 +207,13 @@ class Repository private constructor(context: Context) {
     }
 
     private suspend fun searchMerged(filters: Filters, prev: MultiPage? = null): MultiPage = coroutineScope {
-        val keys = filters.categories.map { it.id }.ifEmpty { listOf("") }
+        val streams = streams(filters).toMap()
+        val keys = streams.keys.toList()
         val perPage = if (keys.size == 1) PAGE_SIZE else maxOf(10, PAGE_SIZE / keys.size + 5)
         val pending = keys.filter { k -> prev == null || (prev.offsets[k] ?: 0) < (prev.totals[k] ?: 0) }
         val pages = pending.map { k ->
             async {
-                val f = filters.copy(categories = filters.categories.filter { it.id == k })
-                k to BazosApi.search(f, prev?.offsets?.get(k) ?: 0, perPage)
+                k to BazosApi.search(streams.getValue(k), prev?.offsets?.get(k) ?: 0, perPage)
             }
         }.awaitAll()
         val items = pages.flatMap { it.second.items }.distinctBy { it.id }
@@ -216,6 +259,20 @@ class Repository private constructor(context: Context) {
         return sorted
     }
 
+    /** Všechny iPhony z ceníku mp.cz, od nejnovější generace (pro výběr modelů). */
+    suspend fun iphoneModels(): List<IphoneKey> {
+        val list = runCatching { pricelist.get() }.getOrNull() ?: return emptyList()
+        return list.items.mapNotNull { parseIphone(it.variant)?.takeIf { k -> k.number != null } }
+            .map { it.copy(storageGb = null) }.distinct().sortedWith(iphoneOrder)
+    }
+
+    /** Kapacity, které u vybraných modelů existují (pro výběr kapacity). */
+    suspend fun iphoneStorages(models: Collection<String>): List<Int> {
+        val list = runCatching { pricelist.get() }.getOrNull() ?: return emptyList()
+        return list.items.mapNotNull { parseIphone(it.variant) }
+            .filter { models.isEmpty() || modelLabel(it) in models }.mapNotNull { it.storageGb }.distinct().sorted()
+    }
+
     /** Všechny fotky inzerátu (z detailu, sdílí cache s detailem). */
     suspend fun images(id: String): List<String> = BazosApi.images(rawDetail(id))
 
@@ -241,7 +298,8 @@ class Repository private constructor(context: Context) {
         val f = filters.copy(
             section = Section(BazosApi.SECTION_MOBILES, "Mobily"),
             categories = listOf(Category(BazosApi.CATEGORY_APPLE, "Apple")),
-            query = filters.query.ifBlank { "iphone" },
+            query = if (filters.models.isEmpty()) filters.query.ifBlank { "iphone" } else filters.query,
+            hideNoise = false, // Výkup má vlastní „Skrýt prodané a šum" (vyřazené ukazuje ztlumeně)
         )
         val listDeferred = async { search(f, prev) }
         val prices = runCatching { pricelist.get() }.getOrNull()
@@ -303,6 +361,17 @@ class Repository private constructor(context: Context) {
         private const val MARKET_CACHE_MS = 3600_000L
         private const val OTHER_BRANDS = "349" // Mobily → „Ostatní značky"
         private const val MAX_TOP_SKIP_ROUNDS = 5 // kolik stránek topovaných max. přeskočit (5 × 200)
+
+        /** Generace sestupně (18 → X), SE na konci; v rámci generace základ, e, mini, Plus, Air, Pro, Pro Max. */
+        val iphoneOrder: Comparator<IphoneKey> = compareByDescending<IphoneKey> { if ((it.number ?: 0) > 2000) 0 else it.number ?: 0 }
+            .thenByDescending { it.number ?: 0 }
+            .thenBy { k ->
+                val v = k.variants
+                when {
+                    "pro" in v && "max" in v -> 6; "pro" in v -> 5; "air" in v -> 4; "plus" in v -> 3; "mini" in v -> 2; "e" in v -> 1
+                    "xs" in v && "max" in v -> 3; "xs" in v -> 2; "xr" in v -> 1; else -> 0
+                }
+            }
 
         @Volatile private var instance: Repository? = null
         fun get(context: Context): Repository =
