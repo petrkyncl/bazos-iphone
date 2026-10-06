@@ -9,11 +9,11 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "cz.petrkyncl.bazosiphony"
+        applicationId = "cz.petrkyncl.bazosplus"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
     }
 
     buildTypes {
@@ -50,6 +50,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.work.runtime)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
 }

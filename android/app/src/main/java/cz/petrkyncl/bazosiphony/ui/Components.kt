@@ -17,6 +17,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.material3.ScaffoldDefaults
 import cz.petrkyncl.bazosiphony.data.Deal
 import cz.petrkyncl.bazosiphony.domain.Grade
 
@@ -93,3 +97,7 @@ fun DealDot(deal: Deal, modifier: Modifier = Modifier) {
     }
     Box(modifier.size(8.dp).background(color, CircleShape))
 }
+
+/** Insety pro obrazovky uvnitř hlavního Scaffoldu: spodní lištu už řeší navigace. */
+@Composable
+fun insetsWithoutBottom(): WindowInsets = ScaffoldDefaults.contentWindowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)

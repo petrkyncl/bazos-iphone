@@ -1,20 +1,60 @@
 package cz.petrkyncl.bazosiphony.ui
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 
-/** Významové barvy (zisk/ztráta/varování) — stejné bez ohledu na barvy z tapety. */
+/** Bazošova oranžová (bazos.cz: #ff6600, tmavší #bf4c00, světlá #ffd9bf). */
+val BazosOrange = Color(0xFFFF6600)
+
+private val Light = lightColorScheme(
+    primary = BazosOrange,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFFFD9BF),
+    onPrimaryContainer = Color(0xFF3A1600),
+    secondary = Color(0xFFBF4C00),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFFFECDD),
+    onSecondaryContainer = Color(0xFF4A1F00),
+    tertiary = Color(0xFF8A5A00),
+    background = Color(0xFFFFFBF8),
+    surface = Color(0xFFFFFBF8),
+    surfaceContainerLowest = Color.White,
+    surfaceContainerLow = Color.White,
+    surfaceContainer = Color(0xFFFBF3EC),
+    surfaceContainerHigh = Color(0xFFF6ECE4),
+    surfaceContainerHighest = Color(0xFFF0E5DC),
+    outline = Color(0xFF9C8B80),
+    outlineVariant = Color(0xFFE6D6CA),
+)
+
+private val Dark = darkColorScheme(
+    primary = Color(0xFFFF8A3D),
+    onPrimary = Color(0xFF3A1600),
+    primaryContainer = Color(0xFF8A3700),
+    onPrimaryContainer = Color(0xFFFFDBC8),
+    secondary = Color(0xFFFFB68C),
+    onSecondary = Color(0xFF4A1F00),
+    secondaryContainer = Color(0xFF5E2A05),
+    onSecondaryContainer = Color(0xFFFFDBC8),
+    background = Color(0xFF16110E),
+    surface = Color(0xFF16110E),
+    surfaceContainerLowest = Color(0xFF110C09),
+    surfaceContainerLow = Color(0xFF1F1915),
+    surfaceContainer = Color(0xFF241D18),
+    surfaceContainerHigh = Color(0xFF2E2722),
+    surfaceContainerHighest = Color(0xFF39312C),
+    outline = Color(0xFF9F8D82),
+    outlineVariant = Color(0xFF52443B),
+)
+
+/** Významové barvy (zisk/ztráta/varování). */
 @Immutable
 data class StatusColors(
     val good: Color, val goodBg: Color,
@@ -41,13 +81,7 @@ val LocalStatus = staticCompositionLocalOf { LightStatus }
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
-    val context = LocalContext.current
-    val scheme = when {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        dark -> darkColorScheme(primary = Color(0xFF5B8FF9))
-        else -> lightColorScheme(primary = Color(0xFF2F6FED))
-    }
     CompositionLocalProvider(LocalStatus provides if (dark) DarkStatus else LightStatus) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(colorScheme = if (dark) Dark else Light, content = content)
     }
 }

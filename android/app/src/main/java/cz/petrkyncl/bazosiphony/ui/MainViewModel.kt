@@ -1,169 +1,117 @@
 package cz.petrkyncl.bazosiphony.ui
 
 import android.app.Application
-import android.content.Context
-import androidx.core.content.edit
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import cz.petrkyncl.bazosiphony.data.Ad
-import cz.petrkyncl.bazosiphony.data.AdRepository
-import cz.petrkyncl.bazosiphony.data.BazosApi
-import cz.petrkyncl.bazosiphony.data.Deal
-import cz.petrkyncl.bazosiphony.data.SellerProfile
-import cz.petrkyncl.bazosiphony.domain.Grade
-import kotlinx.coroutines.Job
+import cz.petrkyncl.bazosiphony.data.Account
+import cz.petrkyncl.bazosiphony.data.FavoritesStore
+import cz.petrkyncl.bazosiphony.data.Filters
+import cz.petrkyncl.bazosiphony.data.Listing
+import cz.petrkyncl.bazosiphony.data.Repository
+import cz.petrkyncl.bazosiphony.data.SavedSearchStore
+import cz.petrkyncl.bazosiphony.data.Section
+import cz.petrkyncl.bazosiphony.data.WatchWorker
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class SortMode(val label: String, val api: String) {
-    DATE("Nejnovější", "date"),
-    PROFIT("Největší zisk", "date"), // řadí se lokálně z načtených
-    PRICE_ASC("Nejlevnější", "price_asc"),
-    PRICE_DESC("Nejdražší", "price_desc"),
-}
-
-data class ListState(
-    val filters: BazosApi.Filters = BazosApi.Filters(),
-    val sort: SortMode = SortMode.DATE,
-    val onlyGood: Boolean = false,
-    val hideExcluded: Boolean = true,
-    val ads: List<Ad> = emptyList(),
-    val total: Int = 0,
-    val nextOffset: Int = 0,
-    val loading: Boolean = false, // první stránka / obnovení
-    val loadingMore: Boolean = false,
-    val error: String? = null,
-    val pricelistUpdatedAt: Long? = null,
-) {
-    val visible: List<Ad>
-        get() {
-            var list = ads
-            if (hideExcluded) list = list.filter { it.deal != Deal.EXCLUDED }
-            if (onlyGood) list = list.filter { it.deal == Deal.GOOD }
-            if (sort == SortMode.PROFIT) list = list.sortedByDescending { it.profit ?: Int.MIN_VALUE }
-            return list
-        }
-    val canLoadMore get() = nextOffset < total && !loading && !loadingMore
-    val goodCount get() = ads.count { it.deal == Deal.GOOD }
-}
-
-data class DetailState(
-    val ad: Ad,
-    val grade: Grade = ad.condition.grade, // uživatel může stav přepnout podle fotek
-    val seller: SellerProfile? = null,
-    val sellerLoading: Boolean = true,
-)
-
 class MainViewModel(app: Application) : AndroidViewModel(app) {
-    private val repo = AdRepository(app)
-    private val prefs = app.getSharedPreferences("filters", Context.MODE_PRIVATE)
+    val repo = Repository.get(app)
+    val favorites = FavoritesStore.get(app)
+    val savedSearches = SavedSearchStore.get(app)
+    val account = Account.get(app)
 
-    private val _list = MutableStateFlow(loadPrefs())
-    val list: StateFlow<ListState> = _list.asStateFlow()
+    private val _sections = MutableStateFlow<List<Section>>(emptyList())
+    val sections = _sections.asStateFlow()
+    private val _sectionsError = MutableStateFlow<String?>(null)
+    val sectionsError = _sectionsError.asStateFlow()
 
-    private val _detail = MutableStateFlow<DetailState?>(null)
-    val detail: StateFlow<DetailState?> = _detail.asStateFlow()
+    var tab by mutableStateOf(Tab.BROWSE)
+        private set
 
-    private var loadJob: Job? = null
-
-    init {
-        refresh()
-    }
-
-    fun refresh() = load(reset = true)
-
-    fun loadMore() {
-        if (_list.value.canLoadMore) load(reset = false)
-    }
-
-    private fun load(reset: Boolean) {
-        if (reset) loadJob?.cancel() else if (loadJob?.isActive == true) return
-        val s = _list.value
-        val offset = if (reset) 0 else s.nextOffset
-        _list.update { it.copy(loading = reset, loadingMore = !reset, error = null) }
-        loadJob = viewModelScope.launch {
-            runCatching { repo.page(s.filters.copy(sort = s.sort.api), offset) }
-                .onSuccess { page ->
-                    _list.update { cur ->
-                        val merged = if (reset) page.ads else cur.ads + page.ads
-                        cur.copy(
-                            ads = merged.distinctBy { it.id },
-                            total = page.total,
-                            nextOffset = offset + AdRepository.PAGE_SIZE,
-                            loading = false,
-                            loadingMore = false,
-                            pricelistUpdatedAt = page.pricelistUpdatedAt,
-                        )
-                    }
-                }
-                .onFailure { e ->
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    _list.update { it.copy(loading = false, loadingMore = false, error = e.message ?: e.toString()) }
-                }
-        }
-    }
-
-    fun applyFilters(filters: BazosApi.Filters) {
-        _list.update { it.copy(filters = filters) }
-        savePrefs()
-        refresh()
-    }
-
-    fun setSort(sort: SortMode) {
-        val needsReload = sort.api != _list.value.sort.api
-        _list.update { it.copy(sort = sort) }
-        savePrefs()
-        if (needsReload) refresh()
-    }
-
-    fun setOnlyGood(v: Boolean) { _list.update { it.copy(onlyGood = v) }; savePrefs() }
-    fun setHideExcluded(v: Boolean) { _list.update { it.copy(hideExcluded = v) }; savePrefs() }
-
-    fun refreshPricelist() = viewModelScope.launch {
-        runCatching { repo.refreshPricelist() }
-            .onSuccess { refresh() }
-            .onFailure { e -> _list.update { it.copy(error = "Ceník mp.cz: ${e.message}") } }
-    }
-
-    fun open(ad: Ad) {
-        _detail.value = DetailState(ad)
-        viewModelScope.launch {
-            val seller = runCatching { repo.seller(ad) }.getOrNull()
-            _detail.update { if (it?.ad?.id == ad.id) it.copy(seller = seller, sellerLoading = false) else it }
-        }
-    }
-
-    fun close() { _detail.value = null }
-
-    fun setGrade(grade: Grade) = _detail.update { it?.copy(grade = grade) }
-
-    private fun loadPrefs(): ListState = ListState(
-        filters = BazosApi.Filters(
-            query = prefs.getString("query", "") ?: "",
-            priceFrom = prefs.getString("priceFrom", "2000") ?: "",
-            priceTo = prefs.getString("priceTo", "") ?: "",
-            zip = prefs.getString("zip", "") ?: "",
-            distanceKm = prefs.getInt("distance", 25),
-        ),
-        sort = runCatching { SortMode.valueOf(prefs.getString("sort", "DATE")!!) }.getOrDefault(SortMode.DATE),
-        onlyGood = prefs.getBoolean("onlyGood", false),
-        hideExcluded = prefs.getBoolean("hideExcluded", true),
+    /** Každá záložka má vlastní historii obrazovek. */
+    private val stacks: Map<Tab, SnapshotStateList<Route>> = mapOf(
+        Tab.BROWSE to mutableStateListOf(Route.Home),
+        Tab.SEARCH to mutableStateListOf(Route.Listings(ListingController(viewModelScope, repo, Filters()), searchMode = true)),
+        Tab.DEALS to mutableStateListOf(Route.Deals(DealsController(viewModelScope, repo))),
+        Tab.FAVORITES to mutableStateListOf(Route.Favorites),
+        Tab.WATCH to mutableStateListOf(Route.Watch),
     )
 
-    private fun savePrefs() {
-        val s = _list.value
-        prefs.edit {
-            putString("query", s.filters.query)
-            putString("priceFrom", s.filters.priceFrom)
-            putString("priceTo", s.filters.priceTo)
-            putString("zip", s.filters.zip)
-            putInt("distance", s.filters.distanceKm)
-            putString("sort", s.sort.name)
-            putBoolean("onlyGood", s.onlyGood)
-            putBoolean("hideExcluded", s.hideExcluded)
+    val stack: List<Route> get() = stacks.getValue(tab)
+    val current: Route get() = stack.last()
+    val canGoBack get() = stack.size > 1 || tab != Tab.BROWSE
+
+    init {
+        loadSections()
+        WatchWorker.schedule(app)
+    }
+
+    fun loadSections() = viewModelScope.launch {
+        _sectionsError.value = null
+        runCatching { repo.sections() }
+            .onSuccess { _sections.value = it }
+            .onFailure { _sectionsError.value = it.message }
+    }
+
+    fun selectTab(t: Tab) {
+        // opakované ťuknutí na aktivní záložku = návrat na její začátek
+        if (t == tab) stacks.getValue(t).let { s -> while (s.size > 1) s.removeAt(s.lastIndex) }
+        tab = t
+        if (t == Tab.WATCH) savedSearches.reload()
+    }
+
+    fun back(): Boolean {
+        val s = stacks.getValue(tab)
+        return when {
+            s.size > 1 -> { s.removeAt(s.lastIndex); true }
+            tab != Tab.BROWSE -> { tab = Tab.BROWSE; true }
+            else -> false
         }
     }
+
+    private fun push(r: Route) { stacks.getValue(tab).add(r) }
+
+    fun openFilters(filters: Filters, savedSearchId: String? = null) =
+        push(Route.Listings(ListingController(viewModelScope, repo, filters, savedSearchId)))
+
+    fun openAd(id: String, preview: Listing? = null) =
+        push(Route.Detail(DetailController(viewModelScope, repo, account, id, preview)))
+
+    fun openAccount() = push(Route.AccountScreen)
+
+    /** Nové hledání v záložce Hledat (např. z domovské obrazovky). */
+    fun search(filters: Filters) {
+        tab = Tab.SEARCH
+        val s = stacks.getValue(Tab.SEARCH)
+        while (s.size > 1) s.removeAt(s.lastIndex)
+        (s.first() as Route.Listings).c.setFilters(filters)
+    }
+
+    fun openSavedSearch(id: String) {
+        val saved = savedSearches.items.value.firstOrNull { it.id == id } ?: return
+        tab = Tab.WATCH
+        val s = stacks.getValue(Tab.WATCH)
+        while (s.size > 1) s.removeAt(s.lastIndex)
+        openFilters(saved.filters, saved.id)
+    }
+
+    fun saveSearch(filters: Filters, currentMaxId: Long) {
+        savedSearches.add(filters, currentMaxId)
+        WatchWorker.schedule(getApplication())
+    }
+
+    fun removeSearch(id: String) {
+        savedSearches.remove(id)
+        WatchWorker.schedule(getApplication())
+    }
+
+    fun toggleFavorite(listing: Listing) = favorites.toggle(listing)
+
+    val accountController by lazy { AccountController(viewModelScope, account) }
 }

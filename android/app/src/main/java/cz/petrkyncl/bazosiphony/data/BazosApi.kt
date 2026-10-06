@@ -4,7 +4,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.time.LocalDateTime
-import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -20,26 +19,31 @@ object BazosApi {
     const val SECTION_MOBILES = "MO"
     const val CATEGORY_APPLE = "439"
 
-    data class Filters(
-        val query: String = "",
-        val priceFrom: String = "2000",
-        val priceTo: String = "",
-        val zip: String = "",
-        val distanceKm: Int = 25,
-        val sort: String = "date", // date | price_asc | price_desc
-    )
+    data class Page(val items: List<Listing>, val total: Int)
 
-    data class Page(val ids: List<String>, val total: Int)
+    suspend fun sections(): List<Section> {
+        val (json, _) = Http.get(BASE + "sections.php", userAgent = UA)
+        return (json as JsonArray).mapNotNull { it as? JsonObject }.mapNotNull { s ->
+            Section(s.str("id") ?: return@mapNotNull null, s.str("title").orEmpty(), s.str("image"))
+        }
+    }
+
+    suspend fun categories(sectionId: String): List<Category> {
+        val (json, _) = Http.get(BASE + "categories.php", mapOf("section" to sectionId), UA)
+        return (json as JsonArray).mapNotNull { it as? JsonObject }.mapNotNull { c ->
+            Category(c.str("id") ?: return@mapNotNull null, c.str("title").orEmpty())
+        }
+    }
 
     suspend fun search(f: Filters, offset: Int, limit: Int): Page {
         val zip = f.zip.filter(Char::isDigit)
         val (json, headers) = Http.get(
             BASE + "ads.php",
             mapOf(
-                "section" to SECTION_MOBILES,
-                "category" to CATEGORY_APPLE,
+                "section" to f.section?.id,
+                "category" to f.category?.id,
                 "sort" to f.sort,
-                "query" to f.query.trim().ifEmpty { "iphone" },
+                "query" to f.query.trim(),
                 "price_from" to f.priceFrom,
                 "price_to" to f.priceTo,
                 "zip_code" to zip,
@@ -49,12 +53,41 @@ object BazosApi {
             ),
             UA,
         )
-        val ids = (json as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.str("id") }
-        return Page(ids, headers["x-total-count"]?.toIntOrNull() ?: ids.size)
+        val items = (json as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::listing) }
+        return Page(items, headers["x-total-count"]?.toIntOrNull() ?: items.size)
+    }
+
+    private fun listing(o: JsonObject): Listing? {
+        val top = o.bool("topped")
+        return Listing(
+            id = o.str("id") ?: return null,
+            title = o.str("title").orEmpty().replace(Regex("\\s+"), " ").trim(),
+            priceText = o.str("price_formatted"),
+            price = parsePrice(o.str("price_formatted")),
+            thumb = o.str("image_thumbnail"),
+            locality = o.str("locality"),
+            isTop = top,
+            views = o.int("views") ?: 0,
+            url = o.str("url").orEmpty(),
+            dateMillis = if (top) null else parseDate(o.str("from")),
+        )
     }
 
     suspend fun detail(adId: String): JsonObject =
         Http.get(BASE + "ad-detail-2.php", mapOf("ad_id" to adId), UA).first as JsonObject
+
+    suspend fun suggestions(query: String): Suggestions {
+        val o = Http.get(BASE + "suggestionsnew.php", mapOf("query" to query), UA).first as JsonObject
+        fun arr(k: String) = (o[k] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+        return Suggestions(
+            keywords = arr("keywords").mapNotNull { it.str("keyword") },
+            sections = arr("sections").mapNotNull { s -> s.str("section")?.let { Section(it, s.str("title").orEmpty()) } },
+            categories = arr("categories").mapNotNull { c ->
+                val sec = Section(c.str("parentSection") ?: return@mapNotNull null, c.str("parentTitle").orEmpty())
+                sec to Category(c.str("category") ?: return@mapNotNull null, c.str("title").orEmpty())
+            },
+        )
+    }
 
     /** Recenze prodejce. Telefony a e-maily recenzentů záměrně zahazujeme. */
     suspend fun sellerReviews(phoneId: String): List<Review> {
@@ -64,7 +97,7 @@ object BazosApi {
                 text = it.str("message").orEmpty().trim(),
                 positive = it.str("type") == "positive",
                 author = it.str("name"),
-                date = parseDate(it.str("from")),
+                dateMillis = parseDate(it.str("from")),
             )
         }
     }
@@ -86,7 +119,7 @@ object BazosApi {
     }
 
     fun parsePrice(text: String?): Int? {
-        if (text == null || Regex("dohodou|v textu|zdarma", RegexOption.IGNORE_CASE).containsMatchIn(text)) return null
+        if (text == null || Regex("dohodou|v textu|zdarma|nabídněte", RegexOption.IGNORE_CASE).containsMatchIn(text)) return null
         return text.filter(Char::isDigit).toIntOrNull()
     }
 
@@ -94,12 +127,11 @@ object BazosApi {
     private val PRAGUE = ZoneId.of("Europe/Prague")
 
     /** API posílá RFC 1123 („Tue, 06 Oct 2026 10:05:04 +0200") i „2026-10-06 10:03:02". */
-    fun parseDate(value: String?): ZonedDateTime? {
+    fun parseDate(value: String?): Long? {
         if (value.isNullOrBlank()) return null
         return runCatching { ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME.withLocale(Locale.ENGLISH)) }
             .recoverCatching { LocalDateTime.parse(value, PLAIN).atZone(PRAGUE) }
-            .recoverCatching { OffsetDateTime.parse(value).toZonedDateTime() }
-            .getOrNull()
+            .getOrNull()?.toInstant()?.toEpochMilli()
     }
 
     fun images(d: JsonObject): List<String> =
