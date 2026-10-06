@@ -142,6 +142,7 @@ private fun App(vm: MainViewModel) {
           androidx.compose.runtime.CompositionLocalProvider(
               cz.petrkyncl.bazosiphony.ui.LocalGalleryMode provides cz.petrkyncl.bazosiphony.ui.ViewMode.gallery,
               cz.petrkyncl.bazosiphony.ui.LocalImages provides vm.repo::images,
+              cz.petrkyncl.bazosiphony.ui.LocalAdLoader provides { id: String -> runCatching { vm.repo.ad(id) }.getOrNull() },
           ) {
             val route = vm.current
             AnimatedContent(

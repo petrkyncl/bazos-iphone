@@ -65,6 +65,7 @@ object Http {
     }
 
     private suspend fun execute(request: Request): Pair<JsonElement, okhttp3.Headers> = withContext(Dispatchers.IO) {
+        android.util.Log.d("BazosHttp", "${request.url.host}${request.url.encodedPath}?${request.url.encodedQuery.orEmpty().take(120)}")
         client.newCall(request).execute().use { res ->
             if (res.code == 429) throw RateLimited()
             if (!res.isSuccessful) throw IOException("HTTP ${res.code}: ${request.url.encodedPath}")

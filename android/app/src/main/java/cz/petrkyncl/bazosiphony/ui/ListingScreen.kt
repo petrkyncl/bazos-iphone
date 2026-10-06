@@ -259,7 +259,7 @@ fun ListingScreen(
                 }
                 if (state.loading && state.items.isEmpty()) item { CenterNote("Načítám inzeráty…", progress = true) }
                 items(state.items, key = { it.id }) { l ->
-                    ListingCard(l, state.plus[l.id], l.id in favoriteIds, onFavorite = { onFavorite(l) }, onClick = { onOpen(l) })
+                    ListingCard(l, null, l.id in favoriteIds, onFavorite = { onFavorite(l) }, onClick = { onOpen(l) })
                 }
                 if (!state.loading && state.error == null && state.items.isEmpty()) item { CenterNote("Nic nenalezeno.") }
                 if (state.loadingMore) item { CenterNote("Načítám další…", progress = true) }

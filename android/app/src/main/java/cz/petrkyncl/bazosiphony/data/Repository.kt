@@ -182,8 +182,11 @@ class Repository private constructor(context: Context) {
         while (out.size < PAGE_SIZE) {
             val pending = keys.filterNot(::exhausted)
             if (pending.isEmpty()) {
-                out += buffer.sortedByDescending { it.id.toLongOrNull() ?: 0 }
-                buffer = emptyList()
+                // vše stažené: vydat po stránkách, zbytek zůstává v bufferu
+                val sorted = buffer.sortedByDescending { it.id.toLongOrNull() ?: 0 }
+                val room = PAGE_SIZE - out.size
+                out += sorted.take(room)
+                buffer = sorted.drop(room)
                 break
             }
             if (rounds >= MAX_TOP_SKIP_ROUNDS) {
@@ -206,8 +209,11 @@ class Repository private constructor(context: Context) {
             // hranice: nejvyšší „nejnižší ID" mezi kategoriemi, které ještě mají co stáhnout
             val threshold = keys.filterNot(::exhausted).maxOfOrNull { frontiers[it] ?: Long.MAX_VALUE } ?: Long.MIN_VALUE
             val (ready, rest) = buffer.partition { (it.id.toLongOrNull() ?: 0) >= threshold }
-            out += ready.sortedByDescending { it.id.toLongOrNull() ?: 0 }
-            buffer = rest
+            // na stránku max. PAGE_SIZE — zbytek zůstane v bufferu na další stránku (bez dalších dotazů)
+            val sortedReady = ready.sortedByDescending { it.id.toLongOrNull() ?: 0 }
+            val take = sortedReady.take(PAGE_SIZE - out.size)
+            out += take
+            buffer = rest + sortedReady.drop(take.size)
         }
         MultiPage(out, totals, offsets, buffer, frontiers)
     }
@@ -308,15 +314,6 @@ class Repository private constructor(context: Context) {
     suspend fun ad(id: String): Ad {
         val prices = runCatching { pricelist.get() }.getOrNull()
         return evaluate(rawDetail(id), prices)
-    }
-
-    /** Výkup pro iPhony ve výpisu: jen položky, jejichž nadpis vypadá jako iPhone (detail kvůli popisu a stavu). */
-    suspend fun enrichPhones(items: List<Listing>): Map<String, Ad> = coroutineScope {
-        val phones = items.filter { parseIphone(it.title)?.number != null }
-        if (phones.isEmpty()) return@coroutineScope emptyMap()
-        val prices = runCatching { pricelist.get() }.getOrNull() ?: return@coroutineScope emptyMap()
-        phones.map { l -> async { runCatching { evaluate(rawDetail(l.id), prices) }.getOrNull() } }
-            .awaitAll().filterNotNull().filter { it.plus != null }.associateBy { it.id }
     }
 
     /** Stránka „Výkup": iPhony z Bazoše vyhodnocené proti výkupu mp.cz. */

@@ -49,7 +49,6 @@ class ListingController(
         val loadingMore: Boolean = false,
         val error: String? = null,
         val categories: List<Category> = emptyList(),
-        val plus: Map<String, Ad> = emptyMap(), // iPhony s výkupem, podle ID inzerátu
     ) {
         val total get() = page?.total ?: 0
         val canLoadMore get() = page?.hasMore == true && !loading && !loadingMore
@@ -104,9 +103,7 @@ class ListingController(
                     )
                 }
                 if (reset) listState.scrollToItem(0)
-                // výkup pro iPhony ve výpisu dotáhnout na pozadí
-                val plus = repo.enrichPhones(page.items)
-                if (plus.isNotEmpty()) _state.update { it.copy(plus = it.plus + plus) }
+                // detail iPhonu (stav, baterie, výkup) si načte až karta na obrazovce — viz LocalAdLoader
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import cz.petrkyncl.bazosiphony.data.Ad
 import cz.petrkyncl.bazosiphony.data.Deal
@@ -68,6 +69,9 @@ private fun Thumb(url: String?, isTop: Boolean, size: Int = 104) {
         if (isTop) TopBadge(Modifier.padding(4.dp))
     }
 }
+
+/** Načtení detailu inzerátu (s cache) pro kartu na obrazovce — poskytuje MainActivity. */
+val LocalAdLoader = staticCompositionLocalOf<suspend (String) -> Ad?> { { null } }
 
 /** Režim výsledků: true = velké celé fotky se swipováním, false = kompaktní seznam. */
 val LocalGalleryMode = staticCompositionLocalOf { true }
@@ -139,9 +143,14 @@ private fun TopBadge(modifier: Modifier = Modifier) {
 /** Karta inzerátu ve výpisu; telefony mají jednotnou strukturovanou kartu. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ListingCard(l: Listing, plus: Ad?, favorite: Boolean, onFavorite: () -> Unit, onClick: () -> Unit) {
+fun ListingCard(l: Listing, preloaded: Ad?, favorite: Boolean, onFavorite: () -> Unit, onClick: () -> Unit) {
     // telefon → jednotná strukturovaná karta (model, kapacita, stav, baterie… vždy stejně)
-    val key = plus?.plus?.key ?: parseIphone(l.title)?.takeIf { it.number != null }
+    val titleKey = remember(l.title) { parseIphone(l.title)?.takeIf { it.number != null } }
+    // detail (stav, baterie, výkup) jen u karty, která je na obrazovce — žádné hromadné načítání
+    val loader = LocalAdLoader.current
+    val loaded by produceState<Ad?>(null, l.id) { if (preloaded == null && titleKey != null) value = loader(l.id) }
+    val plus = preloaded ?: loaded
+    val key = plus?.plus?.key ?: titleKey
     if (key != null && plus?.plus?.issue?.excludes != true && listingIssue(l.title, "") == null) {
         PhoneCard(l, key, plus, market = null, favorite = favorite, onFavorite = onFavorite, onClick = onClick)
         return
