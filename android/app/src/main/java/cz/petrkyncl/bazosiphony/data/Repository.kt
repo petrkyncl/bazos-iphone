@@ -99,29 +99,34 @@ class Repository private constructor(context: Context) {
         )
     }
 
-    // --- Popularita kategorií (počet inzerátů), cache na týden ---------------------------
-    private val countLimit = Semaphore(3)
+    // --- Popularita značek telefonů -------------------------------------------------------
 
-    // Popularita se zjišťuje jen pro rubriku, kterou uživatel otevře (~20 dotazů), a drží se 30 dní.
+    // Popularita jen pro značky telefonů v rubrice Mobily: 9 dotazů (počet inzerátů z hlavičky), cache 30 dní.
+    // Web ani API počty u značek nevypisují, jinde se řazení nedělá.
     private fun cachedPopularity(sectionId: String): List<Category>? {
-        if (System.currentTimeMillis() - catalogPrefs.getLong("counts_at_$sectionId", 0) > POPULARITY_MAX_AGE_MS) return null
-        val json = catalogPrefs.getString("counts_$sectionId", null) ?: return null
+        if (sectionId != BazosApi.SECTION_MOBILES) return null
+        if (System.currentTimeMillis() - catalogPrefs.getLong("brands_at_$sectionId", 0) > POPULARITY_MAX_AGE_MS) return null
+        val json = catalogPrefs.getString("brands_$sectionId", null) ?: return null
         return runCatching { Http.json.decodeFromString(ListSerializer(Category.serializer()), json) }.getOrNull()
     }
 
-    /** Kategorie rubriky seřazené podle počtu inzerátů (nejpopulárnější první). */
+    /** Kategorie rubriky; u Mobilů značky podle počtu inzerátů, „Ostatní značky" a příslušenství za nimi. */
     suspend fun categoriesByPopularity(sectionId: String): List<Category> {
+        if (sectionId != BazosApi.SECTION_MOBILES) return categories(sectionId)
         cachedPopularity(sectionId)?.let { return it }
-        val counted = coroutineScope {
-            categories(sectionId).map { c ->
-                async { c.copy(count = countLimit.withPermit { runCatching { BazosApi.categoryCount(sectionId, c.id) }.getOrNull() }) }
-            }.awaitAll()
-        }.sortedByDescending { it.count ?: -1 }
-        if (counted.all { it.count != null }) catalogPrefs.edit {
-            putString("counts_$sectionId", Http.json.encodeToString(ListSerializer(Category.serializer()), counted))
-            putLong("counts_at_$sectionId", System.currentTimeMillis())
+        val all = categories(sectionId)
+        // Bazoš řadí nejdřív značky, „Ostatní značky" (id 349) je poslední z nich, pak příslušenství
+        val split = all.indexOfFirst { it.id == OTHER_BRANDS }.takeIf { it >= 0 } ?: return all
+        val brands = coroutineScope {
+            all.take(split).map { c -> async { c.copy(count = runCatching { BazosApi.categoryCount(sectionId, c.id) }.getOrNull()) } }.awaitAll()
         }
-        return counted
+        if (brands.any { it.count == null }) return all
+        val sorted = brands.sortedByDescending { it.count } + all.drop(split)
+        catalogPrefs.edit {
+            putString("brands_$sectionId", Http.json.encodeToString(ListSerializer(Category.serializer()), sorted))
+            putLong("brands_at_$sectionId", System.currentTimeMillis())
+        }
+        return sorted
     }
 
     suspend fun suggestions(query: String): Suggestions = BazosApi.suggestions(query)
@@ -184,6 +189,7 @@ class Repository private constructor(context: Context) {
         private const val CACHE_MS = 10 * 60_000L
         private const val CATALOG_MAX_AGE_MS = 7 * 24 * 3600_000L
         private const val POPULARITY_MAX_AGE_MS = 30 * 24 * 3600_000L
+        private const val OTHER_BRANDS = "349" // Mobily → „Ostatní značky"
 
         @Volatile private var instance: Repository? = null
         fun get(context: Context): Repository =
