@@ -117,17 +117,17 @@ class ListingController(
 /** Záložka „Výkup": iPhony vyhodnocené proti výkupu mp.cz. */
 class DealsController(private val scope: CoroutineScope, private val repo: Repository) {
     enum class Sort(val label: String, val api: String) {
-        DATE("Nejnovější", "date"), PROFIT("Největší zisk", "date"), PRICE_ASC("Nejlevnější", "price_asc"), PRICE_DESC("Nejdražší", "price_desc")
+        NEWEST("Nejnovější vložené", Filters.SORT_NEWEST), DATE("Nejnovější vč. TOP", "date"), PROFIT("Největší zisk", Filters.SORT_NEWEST),
+        PRICE_ASC("Nejlevnější", "price_asc"), PRICE_DESC("Nejdražší", "price_desc")
     }
 
     data class State(
         val filters: Filters = Filters(priceFrom = "2000"),
-        val sort: Sort = Sort.DATE,
+        val sort: Sort = Sort.NEWEST,
         val onlyGood: Boolean = false,
         val hideExcluded: Boolean = true,
         val ads: List<Ad> = emptyList(),
-        val total: Int = 0,
-        val nextOffset: Int = 0,
+        val page: Repository.MultiPage? = null,
         val loading: Boolean = false,
         val loadingMore: Boolean = false,
         val error: String? = null,
@@ -141,7 +141,8 @@ class DealsController(private val scope: CoroutineScope, private val repo: Repos
                 if (sort == Sort.PROFIT) list = list.sortedByDescending { it.profit ?: Int.MIN_VALUE }
                 return list
             }
-        val canLoadMore get() = nextOffset < total && !loading && !loadingMore
+        val total get() = page?.total ?: 0
+        val canLoadMore get() = page?.hasMore == true && !loading && !loadingMore
         val goodCount get() = ads.count { it.deal == Deal.GOOD }
     }
 
@@ -158,15 +159,14 @@ class DealsController(private val scope: CoroutineScope, private val repo: Repos
     private fun load(reset: Boolean) {
         if (reset) job?.cancel() else if (job?.isActive == true) return
         val s = _state.value
-        val offset = if (reset) 0 else s.nextOffset
         _state.update { it.copy(loading = reset, loadingMore = !reset, error = null) }
         job = scope.launch {
             try {
-                val (ads, total, pricelistAt) = repo.phoneDeals(s.filters.copy(sort = s.sort.api), offset)
+                val (ads, page, pricelistAt) = repo.phoneDeals(s.filters.copy(sort = s.sort.api), if (reset) null else s.page)
                 _state.update { cur ->
                     cur.copy(
                         ads = (if (reset) ads else cur.ads + ads).distinctBy { it.id },
-                        total = total, nextOffset = offset + Repository.PAGE_SIZE,
+                        page = page,
                         loading = false, loadingMore = false, pricelistUpdatedAt = pricelistAt,
                     )
                 }

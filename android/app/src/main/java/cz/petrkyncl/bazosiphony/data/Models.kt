@@ -28,12 +28,16 @@ data class Filters(
     val priceTo: String = "",
     val zip: String = "",
     val distanceKm: Int = 25,
-    val sort: String = "date", // date | price_asc | price_desc
+    val sort: String = SORT_NEWEST, // newest (podle vložení, bez TOPu) | date (jako Bazoš, TOP první) | price_asc | price_desc
 ) {
+    companion object {
+        const val SORT_NEWEST = "newest"
+    }
+
     val activeCount get() = listOf(priceFrom, priceTo, zip).count { it.isNotBlank() }
 
     /** Klíč pro porovnání uložených hledání (pořadí kategorií ani řazení nehraje roli). */
-    fun watchKey(): Filters = copy(sort = "date", categories = categories.sortedBy { it.id })
+    fun watchKey(): Filters = copy(sort = SORT_NEWEST, categories = categories.sortedBy { it.id })
 
     /** Převod starého formátu (jedna kategorie) na nový. */
     @Suppress("DEPRECATION")

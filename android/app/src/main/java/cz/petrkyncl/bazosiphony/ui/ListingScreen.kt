@@ -229,6 +229,15 @@ fun ListingScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
                 state.error?.let { item { CenterNote("Chyba: $it", action = "Zkusit znovu" to c::refresh) } }
+                if (state.page?.topFallback == true) {
+                    item {
+                        Text(
+                            "Tady je topovaných inzerátů tisíce, proto jsou nahoře jako na Bazoši. Bez TOPu to řadí v rubrice nebo s hledaným výrazem.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                        )
+                    }
+                }
                 if (state.loading && state.items.isEmpty()) item { CenterNote("Načítám inzeráty…", progress = true) }
                 items(state.items, key = { it.id }) { l ->
                     ListingCard(l, state.plus[l.id], l.id in favoriteIds, onFavorite = { onFavorite(l) }, onClick = { onOpen(l) })
@@ -242,7 +251,12 @@ fun ListingScreen(
     if (showFilters) FilterSheet(f, onDismiss = { showFilters = false }) { showFilters = false; submit(it) }
 }
 
-val SORTS = listOf("date" to "Nejnovější", "price_asc" to "Nejlevnější", "price_desc" to "Nejdražší")
+val SORTS = listOf(
+    Filters.SORT_NEWEST to "Nejnovější vložené",
+    "date" to "Nejnovější vč. TOP",
+    "price_asc" to "Nejlevnější",
+    "price_desc" to "Nejdražší",
+)
 
 @Composable
 fun SortChip(current: String, options: List<Pair<String, String>>, onSort: (String) -> Unit) {

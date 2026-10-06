@@ -66,9 +66,17 @@ class Repository private constructor(context: Context) {
     }
 
     /** Stránka výsledků; klíč offsetů/počtů = ID kategorie („" bez kategorie). */
-    data class MultiPage(val items: List<Listing>, val totals: Map<String, Int>, val offsets: Map<String, Int>) {
+    data class MultiPage(
+        val items: List<Listing>,
+        val totals: Map<String, Int>,
+        val offsets: Map<String, Int>,
+        // jen pro řazení bez TOPu: stažené, ale ještě nezařazené inzeráty a hranice (nejnižší ID netopovaného) po kategoriích
+        val buffer: List<Listing> = emptyList(),
+        val frontiers: Map<String, Long> = emptyMap(),
+        val topFallback: Boolean = false, // topovaných je moc (celý Bazoš) → pořadí Bazoše
+    ) {
         val total get() = totals.values.sum()
-        val hasMore get() = totals.any { (k, t) -> (offsets[k] ?: 0) < t }
+        val hasMore get() = buffer.isNotEmpty() || totals.any { (k, t) -> (offsets[k] ?: 0) < t }
     }
 
     /**
@@ -76,7 +84,61 @@ class Repository private constructor(context: Context) {
      * (paralelně) a výsledky spojíme podle zvoleného řazení. Další stránka pokračuje u každé
      * kategorie od jejího offsetu.
      */
-    suspend fun search(filters: Filters, prev: MultiPage? = null): MultiPage = coroutineScope {
+    suspend fun search(filters: Filters, prev: MultiPage? = null): MultiPage =
+        if (filters.sort == Filters.SORT_NEWEST && prev?.topFallback != true) searchIgnoringTop(filters, prev)
+        else searchMerged(filters.copy(sort = if (filters.sort == Filters.SORT_NEWEST) "date" else filters.sort), prev)
+            .let { if (prev?.topFallback == true) it.copy(topFallback = true) else it }
+
+    /**
+     * Nejnovější podle vložení, bez ohledu na topování. Bazoš při řazení podle data dává nejdřív blok
+     * všech topovaných (v kategorii stovky), pak ostatní podle data. ID roste s časem vložení, takže
+     * stažené inzeráty řadíme podle ID a vydáme jen ty, které už žádný další (starší) netopovaný nepředběhne.
+     */
+    private suspend fun searchIgnoringTop(filters: Filters, prev: MultiPage?): MultiPage = coroutineScope {
+        val keys = filters.categories.map { it.id }.ifEmpty { listOf("") }
+        val perPage = if (keys.size == 1) 200 else 100
+        var totals = prev?.totals ?: emptyMap()
+        var offsets = prev?.offsets ?: emptyMap()
+        var frontiers = prev?.frontiers ?: emptyMap()
+        var buffer = prev?.buffer ?: emptyList()
+        val out = mutableListOf<Listing>()
+        fun exhausted(k: String) = totals[k]?.let { (offsets[k] ?: 0) >= it } ?: false
+        var rounds = 0
+        while (out.size < PAGE_SIZE) {
+            val pending = keys.filterNot(::exhausted)
+            if (pending.isEmpty()) {
+                out += buffer.sortedByDescending { it.id.toLongOrNull() ?: 0 }
+                buffer = emptyList()
+                break
+            }
+            if (rounds >= MAX_TOP_SKIP_ROUNDS) {
+                // obří blok topovaných (celý Bazoš bez hledání) → vzdát to a řadit jako Bazoš
+                if (prev == null && out.isEmpty()) return@coroutineScope searchMerged(filters.copy(sort = "date"), null).copy(topFallback = true)
+                break
+            }
+            val pages = pending.map { k ->
+                async {
+                    val f = filters.copy(sort = "date", categories = filters.categories.filter { it.id == k })
+                    k to BazosApi.search(f, offsets[k] ?: 0, perPage)
+                }
+            }.awaitAll()
+            rounds++
+            for ((k, page) in pages) {
+                totals = totals + (k to page.total)
+                offsets = offsets + (k to (offsets[k] ?: 0) + perPage)
+                page.items.filterNot { it.isTop }.minOfOrNull { it.id.toLongOrNull() ?: 0 }?.let { frontiers = frontiers + (k to it) }
+                buffer = (buffer + page.items).distinctBy { it.id }
+            }
+            // hranice: nejvyšší „nejnižší ID" mezi kategoriemi, které ještě mají co stáhnout
+            val threshold = keys.filterNot(::exhausted).maxOfOrNull { frontiers[it] ?: Long.MAX_VALUE } ?: Long.MIN_VALUE
+            val (ready, rest) = buffer.partition { (it.id.toLongOrNull() ?: 0) >= threshold }
+            out += ready.sortedByDescending { it.id.toLongOrNull() ?: 0 }
+            buffer = rest
+        }
+        MultiPage(out, totals, offsets, buffer, frontiers)
+    }
+
+    private suspend fun searchMerged(filters: Filters, prev: MultiPage? = null): MultiPage = coroutineScope {
         val keys = filters.categories.map { it.id }.ifEmpty { listOf("") }
         val perPage = if (keys.size == 1) PAGE_SIZE else maxOf(10, PAGE_SIZE / keys.size + 5)
         val pending = keys.filter { k -> prev == null || (prev.offsets[k] ?: 0) < (prev.totals[k] ?: 0) }
@@ -147,17 +209,17 @@ class Repository private constructor(context: Context) {
     }
 
     /** Stránka „Výkup": iPhony z Bazoše vyhodnocené proti výkupu mp.cz. */
-    suspend fun phoneDeals(filters: Filters, offset: Int): Triple<List<Ad>, Int, Long?> = coroutineScope {
+    suspend fun phoneDeals(filters: Filters, prev: MultiPage?): Triple<List<Ad>, MultiPage, Long?> = coroutineScope {
         val f = filters.copy(
             section = Section(BazosApi.SECTION_MOBILES, "Mobily"),
             categories = listOf(Category(BazosApi.CATEGORY_APPLE, "Apple")),
             query = filters.query.ifBlank { "iphone" },
         )
-        val listDeferred = async { BazosApi.search(f, offset, PAGE_SIZE) }
+        val listDeferred = async { search(f, prev) }
         val prices = runCatching { pricelist.get() }.getOrNull()
         val page = listDeferred.await()
         val ads = page.items.map { l -> async { runCatching { evaluate(rawDetail(l.id), prices) }.getOrNull() } }.awaitAll().filterNotNull()
-        Triple(ads, page.total, prices?.updatedAtMillis)
+        Triple(ads, page, prices?.updatedAtMillis)
     }
 
     suspend fun refreshPricelist(): Long = pricelist.get(forceRefresh = true).updatedAtMillis
@@ -190,6 +252,7 @@ class Repository private constructor(context: Context) {
         private const val CATALOG_MAX_AGE_MS = 7 * 24 * 3600_000L
         private const val POPULARITY_MAX_AGE_MS = 30 * 24 * 3600_000L
         private const val OTHER_BRANDS = "349" // Mobily → „Ostatní značky"
+        private const val MAX_TOP_SKIP_ROUNDS = 5 // kolik stránek topovaných max. přeskočit (5 × 200)
 
         @Volatile private var instance: Repository? = null
         fun get(context: Context): Repository =

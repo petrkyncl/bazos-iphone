@@ -44,7 +44,7 @@ object BazosApi {
             mapOf(
                 "section" to f.section?.id,
                 "category" to f.categories.firstOrNull()?.id,
-                "sort" to f.sort,
+                "sort" to if (f.sort == Filters.SORT_NEWEST) "date" else f.sort, // „bez TOPu" řadí appka sama
                 "query" to f.query.trim(),
                 "price_from" to f.priceFrom,
                 "price_to" to f.priceTo,
