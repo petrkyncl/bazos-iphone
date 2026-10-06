@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# stažený výkupní ceník mp.cz (generovaný)
+/data/
