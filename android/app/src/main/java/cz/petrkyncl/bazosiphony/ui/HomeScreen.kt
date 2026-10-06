@@ -42,7 +42,9 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -74,7 +76,7 @@ fun HomeScreen(
                     Text(
                         buildAnnotatedString {
                             withStyle(SpanStyle(fontWeight = FontWeight.Black)) { append("bazoš") }
-                            withStyle(SpanStyle(fontWeight = FontWeight.Light)) { append(" plus") }
+                            withStyle(SpanStyle(fontWeight = FontWeight.Light, color = MaterialTheme.colorScheme.primary)) { append(" plus") }
                         },
                         style = MaterialTheme.typography.headlineSmall,
                     )
@@ -85,9 +87,8 @@ fun HomeScreen(
                         Icon(if (verified) Icons.Default.Verified else Icons.Default.AccountCircle, "Účet")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = BazosOrange, titleContentColor = Color.White, actionIconContentColor = Color.White,
-                ),
+                // klidná neutrální lišta — oranžová jen jako akcent
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
             )
         },
     ) { padding ->
@@ -149,7 +150,12 @@ private fun SectionRow(s: Section, categories: List<Category>, onSection: (Secti
             Modifier.fillMaxWidth().clickable { onSection(s) }.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AsyncImage(s.image, null, Modifier.size(40.dp))
+            Box(
+                Modifier.size(44.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(painterResource(sectionIcon(s.id)), null, Modifier.size(26.dp), tint = MaterialTheme.colorScheme.primary)
+            }
             Spacer(Modifier.width(12.dp))
             Text(s.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             Text("Vše", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -175,7 +181,7 @@ private fun CurrencyButton() {
     var open by remember { mutableStateOf(false) }
     androidx.compose.foundation.layout.Box {
         androidx.compose.material3.TextButton(onClick = { open = true }) {
-            Text(if (Money.selected == "CZK") "Kč" else Money.selected, color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text(if (Money.selected == "CZK") "Kč" else Money.selected, fontWeight = FontWeight.SemiBold)
         }
         androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Text(

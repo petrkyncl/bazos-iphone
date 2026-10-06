@@ -61,7 +61,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun loadSections() = viewModelScope.launch {
         _sectionsError.value = null
         runCatching { repo.sections() }
-            .onSuccess { secs ->
+            .onSuccess { loaded ->
+                val secs = loaded.inPreferredOrder()
                 _sections.value = secs
                 // u rubrik, které už uživatel otevřel, rovnou podle popularity (z cache)
                 _categories.value = repo.allCategories(secs)
