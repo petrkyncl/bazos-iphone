@@ -1,5 +1,7 @@
 # Bazoš iPhony × výkup mp.cz
 
+> **English:** iPhones listed on Bazoš (the Czech classifieds site) scored against mp.cz buy-back prices. It recognises the model and storage, rates the condition A+ to D from the ad text with plain rules (no AI), and shows the profit and the seller's history. Runs on Bazoš's mobile API, reverse-engineered from its Android app (see `docs/bazos-api.md`). There is a Next.js web app and a native Android app with watchers. The rest of this README is in Czech.
+
 Web, který ukazuje iPhony z Bazoše a ke každému inzerátu přidá:
 
 - **rozpoznaný model a kapacitu** (iPhone X až 18, SE, Air, 16e/17e…),
